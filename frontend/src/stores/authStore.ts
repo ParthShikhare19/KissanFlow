@@ -10,6 +10,7 @@ export interface User {
   name: string
   mobile: string
   role: 'FARMER' | 'MANDI_STAFF' | 'MANDI_OFFICER' | 'GOVT_ADMIN' | 'CSC_OPERATOR'
+  assigned_centre_id?: string | null
   created_at: string
   farmer_profile?: {
     id: string

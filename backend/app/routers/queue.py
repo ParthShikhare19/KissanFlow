@@ -1,6 +1,6 @@
 """Queue management router: gate entry, queue list, positions, call-next."""
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,14 +10,56 @@ from app.database import get_db
 from app.models.slot_booking import SlotBooking, BookingStatus
 from app.models.queue_entry import QueueEntry, QueueStatus
 from app.models.procurement_centre import ProcurementCentre
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, PaymentStatus
 from app.models.user import User, UserRole
 from app.schemas.queue import GateEntryRequest, QueueEntryResponse, QueuePositionResponse, CallNextRequest
 from app.schemas.common import APIResponse
 from app.middleware.auth import CurrentUser, require_role
-from app.socketio_server import emit_queue_updated, emit_your_turn
+from app.socketio_server import emit_queue_updated, emit_your_turn, emit_queue_position
 
 router = APIRouter(tags=["queue"])
+
+# Roles allowed to operate the gate / queue at a centre.
+QUEUE_OPERATOR_ROLES = [UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER]
+
+
+async def _enforce_centre_assignment(
+    current_user: User,
+    centre_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Staff may only operate the centre they are assigned to (#10).
+
+    Officers may also act as backup operators at any centre, but staff are
+    hard-bound to their assignment.
+    """
+    if current_user.role != UserRole.MANDI_STAFF:
+        return
+    if current_user.assigned_centre_id != centre_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not assigned to this centre's queue",
+        )
+
+
+def _booking_admission_error(booking: SlotBooking, today: date) -> str | None:
+    """Return a rejection reason if the booking cannot be admitted at the gate (#4)."""
+    if booking.status == BookingStatus.CANCELLED:
+        return "Booking is cancelled"
+    if booking.status in [BookingStatus.ARRIVED, BookingStatus.IN_QUEUE, BookingStatus.PROCESSING]:
+        return None  # already inside — caller handles the idempotent path
+    if booking.status == BookingStatus.COMPLETED:
+        return "Booking is already completed"
+    if booking.status == BookingStatus.NO_SHOW:
+        return "Booking was marked as a no-show"
+    if booking.status == BookingStatus.PROCESSING:
+        return None
+    # BOOKED: only today's bookings may enter the gate.
+    if booking.slot_date > today:
+        return "Booking is for a future date — admit at the gate on the slot date"
+    if booking.slot_date < today:
+        return "Booking date has passed — ask the farmer to rebook"
+    return None
 
 
 async def _build_queue_payload(db: AsyncSession, centre_id: uuid.UUID) -> list[dict]:
@@ -62,11 +104,37 @@ async def _build_queue_payload(db: AsyncSession, centre_id: uuid.UUID) -> list[d
     return payload
 
 
+async def _emit_farmer_positions(db: AsyncSession, centre_id: uuid.UUID) -> None:
+    """Push each waiting farmer's live position to their personal socket room (#7)."""
+    result = await db.execute(
+        select(QueueEntry).where(
+            QueueEntry.centre_id == centre_id,
+            QueueEntry.status.in_([QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.PROCESSING]),
+        )
+    )
+    entries = result.scalars().all()
+    for e in entries:
+        ahead_result = await db.execute(
+            select(func.count()).where(
+                QueueEntry.centre_id == centre_id,
+                QueueEntry.status == QueueStatus.WAITING,
+                QueueEntry.position < e.position,
+            )
+        )
+        ahead = ahead_result.scalar() or 0
+        await emit_queue_position(str(e.slot_booking_id), {
+            "position": e.position,
+            "estimated_wait_minutes": e.estimated_wait_minutes,
+            "status": e.status.value,
+            "ahead_of_you": ahead,
+        })
+
+
 @router.post("/gate-entry", response_model=APIResponse[QueueEntryResponse])
 async def gate_entry(
     body: GateEntryRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_role([UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER]))],
+    current_user: Annotated[User, Depends(require_role(QUEUE_OPERATOR_ROLES))],
 ):
     """Mark farmer as arrived and add to queue."""
     # Find booking by token or ID
@@ -85,8 +153,12 @@ async def gate_entry(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    if booking.status == BookingStatus.CANCELLED:
-        raise HTTPException(status_code=400, detail="Booking is cancelled")
+    await _enforce_centre_assignment(current_user, booking.centre_id, db)
+
+    today = datetime.now(timezone.utc).date()
+    rejection = _booking_admission_error(booking, today)
+    if rejection:
+        raise HTTPException(status_code=400, detail=rejection)
 
     if booking.status in [BookingStatus.ARRIVED, BookingStatus.IN_QUEUE, BookingStatus.PROCESSING]:
         # Already in queue — return existing entry
@@ -96,6 +168,16 @@ async def gate_entry(
         existing = existing_result.scalar_one_or_none()
         if existing:
             return APIResponse(success=True, data=QueueEntryResponse.model_validate(existing))
+
+    # Block paid/completed procurement double-entry via a linked transaction
+    txn_result = await db.execute(
+        select(Transaction).where(
+            Transaction.slot_booking_id == booking.id,
+            Transaction.payment_status == PaymentStatus.PAID,
+        )
+    )
+    if txn_result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Procurement for this booking is already paid")
 
     # Mark booking as ARRIVED
     booking.status = BookingStatus.ARRIVED
@@ -133,6 +215,7 @@ async def gate_entry(
     # Emit real-time queue update
     queue_payload = await _build_queue_payload(db, booking.centre_id)
     await emit_queue_updated(str(booking.centre_id), queue_payload)
+    await _emit_farmer_positions(db, booking.centre_id)
 
     return APIResponse(success=True, data=QueueEntryResponse.model_validate(entry))
 
@@ -144,6 +227,7 @@ async def get_queue(
     current_user: CurrentUser,
 ):
     """Get full queue for a centre."""
+    await _enforce_centre_assignment(current_user, centre_id, db)
     result = await db.execute(
         select(QueueEntry)
         .where(
@@ -189,6 +273,18 @@ async def get_queue_position(
     if not entry:
         raise HTTPException(status_code=404, detail="Not in queue")
 
+    # Ownership: the farmer may read their own position; privileged roles and
+    # staff may read any.
+    if current_user.role not in [
+        UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR
+    ]:
+        booking_result = await db.execute(
+            select(SlotBooking).where(SlotBooking.id == booking_id)
+        )
+        booking = booking_result.scalar_one_or_none()
+        if not booking or booking.farmer_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Cannot view another farmer's queue position")
+
     ahead_result = await db.execute(
         select(func.count()).where(
             QueueEntry.centre_id == entry.centre_id,
@@ -211,9 +307,11 @@ async def get_queue_position(
 async def call_next(
     body: CallNextRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_role([UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER]))],
+    current_user: Annotated[User, Depends(require_role(QUEUE_OPERATOR_ROLES))],
 ):
     """Mark current CALLED/PROCESSING entry as DONE, call next WAITING entry."""
+    await _enforce_centre_assignment(current_user, body.centre_id, db)
+
     # Complete any currently processing entry
     processing_result = await db.execute(
         select(QueueEntry).where(
@@ -255,6 +353,7 @@ async def call_next(
     # Emit updated queue
     queue_payload = await _build_queue_payload(db, body.centre_id)
     await emit_queue_updated(str(body.centre_id), queue_payload)
+    await _emit_farmer_positions(db, body.centre_id)
 
     if next_entry:
         await db.refresh(next_entry)
@@ -266,7 +365,7 @@ async def call_next(
 async def complete_queue_entry(
     booking_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_role([UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER]))],
+    current_user: Annotated[User, Depends(require_role(QUEUE_OPERATOR_ROLES))],
 ):
     result = await db.execute(
         select(QueueEntry).where(QueueEntry.slot_booking_id == booking_id)
@@ -274,6 +373,8 @@ async def complete_queue_entry(
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Queue entry not found")
+
+    await _enforce_centre_assignment(current_user, entry.centre_id, db)
 
     entry.status = QueueStatus.DONE
     booking_result = await db.execute(select(SlotBooking).where(SlotBooking.id == booking_id))
@@ -285,5 +386,6 @@ async def complete_queue_entry(
 
     queue_payload = await _build_queue_payload(db, entry.centre_id)
     await emit_queue_updated(str(entry.centre_id), queue_payload)
+    await _emit_farmer_positions(db, entry.centre_id)
 
     return APIResponse(success=True, data={"message": "Queue entry marked as done"})

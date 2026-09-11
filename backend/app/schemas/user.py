@@ -43,6 +43,7 @@ class UserResponse(BaseModel):
     name: str
     mobile: str
     role: UserRole
+    assigned_centre_id: Optional[uuid.UUID] = None
     created_at: datetime
 
 

@@ -23,9 +23,19 @@ from app.schemas.transaction import TransactionResponse
 from app.schemas.grievance import GrievanceResponse
 from app.schemas.notification import NotificationResponse
 from app.schemas.common import APIResponse, PaginatedResponse, paginated_response
+from app.services.booking_selection import select_relevant_booking
 from app.utils.qr_generator import generate_qr_base64
 
 router = APIRouter(tags=["farmers"])
+
+# Roles that may view another farmer's records (assistants and oversight).
+FARMER_VIEWER_ROLES = [UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR]
+
+
+def _enforce_farmer_access(current_user: User, farmer_id: uuid.UUID, action: str = "view") -> None:
+    """Farmers may only access their own records (#2)."""
+    if current_user.id != farmer_id and current_user.role not in FARMER_VIEWER_ROLES:
+        raise HTTPException(status_code=403, detail=f"Cannot {action} another farmer's data")
 
 
 def _duration_minutes(start: datetime | None, end: datetime | None) -> int | None:
@@ -40,25 +50,27 @@ async def get_latest_booking(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    """Return the farmer's most recent booking for dashboard queue updates."""
-    if current_user.id != farmer_id and current_user.role not in [
-        UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR
-    ]:
-        raise HTTPException(status_code=403, detail="Cannot view another farmer's booking")
+    """Return the farmer's most relevant booking for dashboard queue updates.
 
-    result = await db.execute(
-        select(SlotBooking).options(
-            selectinload(SlotBooking.farmer),
-            selectinload(SlotBooking.centre),
-            selectinload(SlotBooking.crop),
-        )
-        .where(SlotBooking.farmer_id == farmer_id)
-        .order_by(SlotBooking.created_at.desc())
-        .limit(1)
-    )
-    booking = result.scalar_one_or_none()
+    Uses priority selection (#5/#19): in-queue/processing first, then upcoming
+    booked slot, then unpaid completed — never lets a future booking hide an
+    active queue position, and a fully paid cycle returns None so the
+    dashboard resets (#13).
+    """
+    _enforce_farmer_access(current_user, farmer_id, "view")
+
+    booking = await select_relevant_booking(db, farmer_id)
     booking_response = None
     if booking:
+        booking = await db.scalar(
+            select(SlotBooking)
+            .options(
+                selectinload(SlotBooking.farmer),
+                selectinload(SlotBooking.centre),
+                selectinload(SlotBooking.crop),
+            )
+            .where(SlotBooking.id == booking.id)
+        )
         booking_response = BookingResponse.model_validate(booking)
         booking_response.qr_code_base64 = generate_qr_base64(json.loads(booking.qr_code_data))
     return APIResponse(success=True, data=booking_response)
@@ -70,11 +82,13 @@ async def get_farmer_process_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    """Return real elapsed times for the farmer's recent procurement cycles."""
-    if current_user.id != farmer_id and current_user.role not in [
-        UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR
-    ]:
-        raise HTTPException(status_code=403, detail="Cannot view another farmer's process summary")
+    """Return real elapsed times for the farmer's recent procurement cycles.
+
+    Uses persisted per-stage timestamps (#18): quality_done_at,
+    weighment_done_at, confirmed_at, payment_initiated_at, paid_at — with a
+    fallback to legacy timestamps for rows created before those columns.
+    """
+    _enforce_farmer_access(current_user, farmer_id, "view")
 
     result = await db.execute(
         select(SlotBooking)
@@ -95,7 +109,13 @@ async def get_farmer_process_summary(
         transaction = txn_result.scalar_one_or_none()
         gate_entry = queue_entry.gate_entry_time if queue_entry else None
         processing_started = transaction.created_at if transaction else None
-        completed_at = transaction.completed_at if transaction else None
+        completed_at = (
+            transaction.paid_at or transaction.completed_at
+        ) if transaction else None
+        quality_done = transaction.quality_done_at if transaction else None
+        weighment_done = transaction.weighment_done_at if transaction else None
+        confirmed = transaction.confirmed_at if transaction else None
+        payment_initiated = transaction.payment_initiated_at if transaction else None
         summary.append({
             "booking_id": str(booking.id),
             "token_number": booking.token_number,
@@ -103,6 +123,10 @@ async def get_farmer_process_summary(
             "slot_date": booking.slot_date.isoformat(),
             "booking_to_gate_minutes": _duration_minutes(booking.created_at, gate_entry),
             "gate_to_processing_minutes": _duration_minutes(gate_entry, processing_started),
+            "quality_check_minutes": _duration_minutes(processing_started, quality_done),
+            "weighment_minutes": _duration_minutes(quality_done, weighment_done),
+            "confirmation_minutes": _duration_minutes(weighment_done, confirmed),
+            "payment_minutes": _duration_minutes(payment_initiated, completed_at),
             "processing_to_completion_minutes": _duration_minutes(processing_started, completed_at),
             "total_cycle_minutes": _duration_minutes(booking.created_at, completed_at),
             "payment_status": transaction.payment_status.value if transaction else None,
@@ -123,18 +147,17 @@ async def get_farmer_profile(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    result = await db.execute(select(User).where(User.id == farmer_id))
+    _enforce_farmer_access(current_user, farmer_id, "view")
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.farmer_profile))
+        .where(User.id == farmer_id)
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Farmer not found")
 
-    fp_result = await db.execute(
-        select(FarmerProfile).where(FarmerProfile.user_id == farmer_id)
-    )
-    profile = fp_result.scalar_one_or_none()
     response = FarmerWithProfileResponse.model_validate(user)
-    if profile:
-        response.farmer_profile = FarmerProfileResponse.model_validate(profile)
     return APIResponse(success=True, data=response)
 
 
@@ -145,8 +168,7 @@ async def update_farmer_profile(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUser,
 ):
-    if current_user.id != farmer_id and current_user.role not in [UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR]:
-        raise HTTPException(status_code=403, detail="Cannot update another user's profile")
+    _enforce_farmer_access(current_user, farmer_id, "update")
 
     result = await db.execute(
         select(FarmerProfile).where(FarmerProfile.user_id == farmer_id)
@@ -173,15 +195,18 @@ async def get_farmer_timeline(
     current_user: CurrentUser,
     booking_id: uuid.UUID | None = Query(None),
 ):
-    """Build a procurement status timeline for the farmer's latest (or specified) booking."""
-    query = select(SlotBooking).where(SlotBooking.farmer_id == farmer_id)
-    if booking_id:
-        query = query.where(SlotBooking.id == booking_id)
-    else:
-        query = query.order_by(SlotBooking.created_at.desc()).limit(1)
+    """Build a procurement status timeline for the farmer's relevant booking."""
+    _enforce_farmer_access(current_user, farmer_id, "view")
 
-    result = await db.execute(query)
-    booking = result.scalar_one_or_none()
+    if booking_id:
+        result = await db.execute(
+            select(SlotBooking).where(
+                SlotBooking.id == booking_id, SlotBooking.farmer_id == farmer_id
+            )
+        )
+        booking = result.scalar_one_or_none()
+    else:
+        booking = await select_relevant_booking(db, farmer_id)
 
     if not booking:
         return APIResponse(success=True, data=[])
@@ -190,8 +215,6 @@ async def get_farmer_timeline(
         select(Transaction).where(Transaction.slot_booking_id == booking.id)
     )
     txn = txn_result.scalar_one_or_none()
-
-    now = datetime.now(timezone.utc)
 
     def stage(name: str, label: str, condition: bool, timestamp=None, detail=None) -> TimelineEvent:
         return TimelineEvent(
@@ -217,17 +240,22 @@ async def get_farmer_timeline(
         ]),
         stage("quality_check", "Quality Check Done",
               txn is not None and txn.quality_status is not None,
+              timestamp=txn.quality_done_at if txn else None,
               detail=txn.quality_status.value if txn and txn.quality_status else None),
         stage("weighment", "Weighment Done",
               txn is not None and txn.net_weight_q is not None,
+              timestamp=txn.weighment_done_at if txn else None,
               detail=f"{txn.net_weight_q}Q" if txn and txn.net_weight_q else None),
         stage("procurement_confirmed", "Procurement Confirmed",
               txn is not None and txn.procurement_status.value == "CONFIRMED",
+              timestamp=txn.confirmed_at if txn else None,
               detail=f"₹{txn.total_amount:,.0f}" if txn and txn.total_amount else None),
         stage("payment_initiated", "Payment Initiated",
-              txn is not None and txn.payment_status.value in ["INITIATED", "PROCESSING", "PAID"]),
+              txn is not None and txn.payment_status.value in ["INITIATED", "PROCESSING", "PAID"],
+              timestamp=txn.payment_initiated_at if txn else None),
         stage("payment_done", "Payment Completed",
               txn is not None and txn.payment_status.value == "PAID",
+              timestamp=txn.paid_at if txn else None,
               detail=f"Ref: {txn.payment_ref}" if txn and txn.payment_ref else None),
     ]
     return APIResponse(success=True, data=timeline)
@@ -241,6 +269,7 @@ async def get_farmer_transactions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
+    _enforce_farmer_access(current_user, farmer_id, "view")
     offset = (page - 1) * page_size
     count_result = await db.execute(
         select(func.count()).where(Transaction.farmer_id == farmer_id)
@@ -265,6 +294,7 @@ async def get_farmer_grievances(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
+    _enforce_farmer_access(current_user, farmer_id, "view")
     offset = (page - 1) * page_size
     count_result = await db.execute(
         select(func.count()).where(Grievance.farmer_id == farmer_id)
@@ -289,6 +319,7 @@ async def get_farmer_notifications(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
+    _enforce_farmer_access(current_user, farmer_id, "view")
     offset = (page - 1) * page_size
     count_result = await db.execute(
         select(func.count()).where(Notification.user_id == farmer_id)

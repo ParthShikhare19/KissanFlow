@@ -56,13 +56,18 @@ def gather(action: str, num_digits: int = 1, timeout: int = 8, method: str = "PO
 
 async def verify_twilio_signature(request: Request, x_twilio_signature: Optional[str] = Header(None)):
     """
-    Twilio request signature validation.
-    If TWILIO_AUTH_TOKEN is configured and X-Twilio-Signature header is present,
-    validates the authenticity of the webhook call.
+    Twilio request signature validation dependency, applied to every IVR route (#1).
+
+    - TWILIO_AUTH_TOKEN not configured → demo mode, permit (local SIH demo).
+    - Configured but X-Twilio-Signature missing → 403.
+    - Configured and header present → validate HMAC-SHA1 per Twilio's spec.
     """
-    if not TWILIO_AUTH_TOKEN or not x_twilio_signature:
-        # Development / demo mode or direct internal test — permit
+    if not TWILIO_AUTH_TOKEN:
+        # Development / demo mode — no token configured, permit
         return True
+
+    if not x_twilio_signature:
+        raise HTTPException(status_code=403, detail="Missing Twilio signature")
 
     # Construct the data string for signature verification
     url = str(request.url)
@@ -78,6 +83,10 @@ async def verify_twilio_signature(request: Request, x_twilio_signature: Optional
     if not hmac.compare_digest(expected, x_twilio_signature):
         raise HTTPException(status_code=403, detail="Invalid Twilio signature")
     return True
+
+
+# Apply signature validation to every IVR webhook route (#1).
+router.dependencies.append(Depends(verify_twilio_signature))
 
 
 # ─── Voice Prompts ────────────────────────────────────────────────────────────

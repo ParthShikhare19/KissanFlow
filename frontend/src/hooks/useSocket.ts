@@ -5,7 +5,7 @@
 import { useEffect, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { toast } from 'react-hot-toast'
-import { useQueueStore } from '@/stores/queueStore'
+import { useQueueStore, type QueuePosition } from '@/stores/queueStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -18,7 +18,7 @@ let globalSocket: Socket | null = null
 export function useSocket(centreId?: string, bookingId?: string) {
   const socketRef = useRef<Socket | null>(null)
   const { user } = useAuthStore()
-  const { setCentreQueue, setYourTurn } = useQueueStore()
+  const { setCentreQueue, setYourTurn, setMyPosition } = useQueueStore()
   const { addNotification } = useNotificationStore()
 
   useEffect(() => {
@@ -57,6 +57,11 @@ export function useSocket(centreId?: string, bookingId?: string) {
       setCentreQueue(data.queue)
     }
 
+    const onQueuePosition = (data: QueuePosition) => {
+      // Live position push for the farmer's own booking (#7)
+      setMyPosition(data)
+    }
+
     const onYourTurn = (data: { message: string; booking_id: string }) => {
       setYourTurn(true)
       toast.success(data.message || "It's your turn!", {
@@ -83,6 +88,7 @@ export function useSocket(centreId?: string, bookingId?: string) {
     // Register events (avoid duplicate listeners)
     socket.off('connect', onConnect).on('connect', onConnect)
     socket.off('queue:updated', onQueueUpdated).on('queue:updated', onQueueUpdated)
+    socket.off('queue:position', onQueuePosition).on('queue:position', onQueuePosition)
     socket.off('queue:your-turn', onYourTurn).on('queue:your-turn', onYourTurn)
     socket.off('alert:new', onAlertNew).on('alert:new', onAlertNew)
     socket.off('disconnect', onDisconnect).on('disconnect', onDisconnect)
@@ -98,6 +104,7 @@ export function useSocket(centreId?: string, bookingId?: string) {
       // Remove listeners but keep connection alive for reuse
       socket.off('connect', onConnect)
       socket.off('queue:updated', onQueueUpdated)
+      socket.off('queue:position', onQueuePosition)
       socket.off('queue:your-turn', onYourTurn)
       socket.off('alert:new', onAlertNew)
       socket.off('disconnect', onDisconnect)

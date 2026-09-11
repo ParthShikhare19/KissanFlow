@@ -19,6 +19,7 @@ const Notifications = lazy(() => import('@/pages/Notifications'))
 // Farmer
 const FarmerDashboard = lazy(() => import('@/pages/farmer/Dashboard'))
 const BookSlot        = lazy(() => import('@/pages/farmer/BookSlot'))
+const FarmerBookings  = lazy(() => import('@/pages/farmer/Bookings'))
 const IVRSim          = lazy(() => import('@/pages/farmer/IVRSim'))
 const Grievances      = lazy(() => import('@/pages/farmer/Grievances'))
 
@@ -75,6 +76,9 @@ export default function App() {
             } />
             <Route path="/farmer/book-slot" element={
               <RoleGuard roles={['FARMER', 'CSC_OPERATOR']}><BookSlot /></RoleGuard>
+            } />
+            <Route path="/farmer/bookings" element={
+              <RoleGuard roles={['FARMER', 'CSC_OPERATOR']}><FarmerBookings /></RoleGuard>
             } />
             <Route path="/farmer/ivr" element={
               <RoleGuard roles={['FARMER', 'CSC_OPERATOR']}><IVRSim /></RoleGuard>

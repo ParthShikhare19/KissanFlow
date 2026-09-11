@@ -83,6 +83,15 @@ async def emit_your_turn(booking_id: str, message: str = "Your turn has come"):
     )
 
 
+async def emit_queue_position(booking_id: str, position_payload: dict):
+    """Push a live queue-position update to the farmer's personal room."""
+    await sio.emit(
+        "queue:position",
+        {**position_payload, "booking_id": booking_id},
+        room=f"farmer-{booking_id}",
+    )
+
+
 async def emit_alert_new(centre_id: str, alert_data: dict):
     """Emit a new alert to all clients in a centre room."""
     await sio.emit("alert:new", alert_data, room=f"centre-{centre_id}")

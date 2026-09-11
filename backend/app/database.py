@@ -14,12 +14,13 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 # Local Docker PostgreSQL does not use TLS, while hosted providers such as Neon
 # require it. Do not force TLS for every connection string.
 _requires_ssl = "neon.tech" in DATABASE_URL or "ssl=require" in DATABASE_URL
+_is_sqlite = DATABASE_URL.startswith("sqlite")
 
 engine = create_async_engine(
     DATABASE_URL,
     connect_args={"ssl": "require"} if _requires_ssl else {},
-    pool_size=5,
-    max_overflow=10,
+    # SQLite (used by the automated test suite) does not support pool sizing.
+    **({} if _is_sqlite else {"pool_size": 5, "max_overflow": 10}),
     echo=os.environ.get("ENVIRONMENT", "production") == "development",
 )
 

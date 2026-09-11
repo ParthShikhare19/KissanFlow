@@ -55,6 +55,11 @@ class TransactionResponse(BaseModel):
     pfms_transaction_id: Optional[str] = None
     staff_id: Optional[uuid.UUID] = None
     completed_at: Optional[datetime] = None
+    quality_done_at: Optional[datetime] = None
+    weighment_done_at: Optional[datetime] = None
+    confirmed_at: Optional[datetime] = None
+    payment_initiated_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
     created_at: datetime
 
     # Enriched fields

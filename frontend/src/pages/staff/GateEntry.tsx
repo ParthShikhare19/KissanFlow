@@ -16,7 +16,8 @@ interface BookingInfo {
 type TabMode = 'qr' | 'manual'
 
 export default function GateEntry() {
-  const { t } = useTranslation()
+  const { t: translator } = useTranslation()
+  const t = translator as (key: string) => string
   const [tab, setTab] = useState<TabMode>('manual')
   const [token, setToken] = useState('')
   const [booking, setBooking] = useState<BookingInfo | null>(null)
@@ -70,14 +71,14 @@ export default function GateEntry() {
           },
           (errorMessage: string) => {
             if (!disposed && !errorMessage.toLowerCase().includes('no qr code')) {
-              setScannerError('Camera scan failed. Allow camera access or use Manual Entry.')
+              setScannerError(translator('staff.gateEntry.cameraError'))
             }
           }
         )
       } catch (e) {
         console.error('QR scanner init failed:', e)
         if (!disposed) {
-          setScannerError('Camera is unavailable. Allow camera access or use Manual Entry.')
+          setScannerError(translator('staff.gateEntry.cameraUnavailable'))
         }
       }
     }
@@ -94,14 +95,14 @@ export default function GateEntry() {
     }
   }, [tab])
 
-  const lookupToken = async (t: string) => {
+  const lookupToken = async (tokenStr: string) => {
     setLoading(true)
     setBooking(null)
     try {
-      const res = await get<BookingInfo>(`/bookings/token/${encodeURIComponent(t)}`)
+      const res = await get<BookingInfo>(`/bookings/token/${encodeURIComponent(tokenStr)}`)
       setBooking(res)
     } catch {
-      toast.error('Token not found')
+      toast.error(t('staff.gateEntry.notFound'))
     } finally {
       setLoading(false)
     }
@@ -109,7 +110,7 @@ export default function GateEntry() {
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!token.trim()) { toast.error('Enter a token number'); return }
+    if (!token.trim()) { toast.error(t('staff.gateEntry.enterToken')); return }
     lookupToken(token.trim().toUpperCase())
   }
 
@@ -118,7 +119,7 @@ export default function GateEntry() {
     setMarking(true)
     try {
       await post('/queue/gate-entry', { token_number: booking.token_number })
-      toast.success('Gate entry marked! Farmer added to queue.')
+      toast.success(t('staff.gateEntry.marked'))
       setScannedCount((c) => {
         const next = c + 1
         sessionStorage.setItem('kissanflow_scanned_today', String(next))
@@ -131,7 +132,7 @@ export default function GateEntry() {
         setToken('')
       }, 1200)
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to mark entry'
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || t('staff.gateEntry.markFailed')
       toast.error(msg)
     } finally {
       setMarking(false)
@@ -153,12 +154,12 @@ export default function GateEntry() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">{t('staff.gateEntry.title')}</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Scan QR or enter token to admit farmer into queue</p>
+          <p className="text-xs text-gray-500 mt-0.5">{t('staff.gateEntry.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl shadow-xs">
           <CheckCircle className="w-4 h-4 text-emerald-600" />
           <span className="text-xs font-semibold text-emerald-800">
-            Admitted Today: <strong className="font-bold text-sm text-emerald-900">{scannedCount}</strong>
+            {t('staff.gateEntry.admittedToday')}: <strong className="font-bold text-sm text-emerald-900">{scannedCount}</strong>
           </span>
         </div>
       </div>
@@ -184,7 +185,7 @@ export default function GateEntry() {
       {/* QR Scanner */}
       {tab === 'qr' && (
         <div className="card p-6">
-          <p className="text-sm text-gray-500 mb-4 text-center">Position the QR code within the frame</p>
+          <p className="text-sm text-gray-500 mb-4 text-center">{t('staff.gateEntry.positionQr')}</p>
           <div id="qr-reader" className="w-full" />
           {scannerError && (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -209,7 +210,7 @@ export default function GateEntry() {
                   id="gate-entry-token"
                 />
                 <button type="submit" disabled={loading} className="btn-primary px-6" id="gate-entry-submit">
-                  {loading ? 'Checking...' : t('staff.gateEntry.submit')}
+                  {loading ? t('staff.gateEntry.checking') : t('staff.gateEntry.submit')}
                 </button>
               </div>
             </div>
@@ -232,19 +233,19 @@ export default function GateEntry() {
                 <Icon className={`w-8 h-8 ${info.iconColor}`} />
                 <div>
                   <p className={`font-bold text-lg ${info.textColor}`}>{info.label}</p>
-                  <p className="text-xs text-gray-500">Status: {booking.status}</p>
+                  <p className="text-xs text-gray-500">{t('staff.gateEntry.statusLabel')}: {booking.status}</p>
                 </div>
               </div>
               <span className="font-mono font-bold text-lg text-gray-900">{booking.token_number}</span>
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               {[
-                ['Farmer', booking.farmer?.name || '—'],
-                ['Mobile', booking.farmer?.mobile ? `+91 ${booking.farmer.mobile}` : '—'],
-                ['Crop', booking.crop?.name || '—'],
-                ['Declared Qty', `${booking.declared_quantity_q} Q`],
-                ['Slot', `${booking.slot_date} ${booking.slot_start_time?.slice(0, 5)}`],
-                ['Mandi', booking.centre?.name || '—'],
+                [t('staff.gateEntry.fieldFarmer'), booking.farmer?.name || '—'],
+                [t('auth.login.mobile'), booking.farmer?.mobile ? `+91 ${booking.farmer.mobile}` : '—'],
+                [t('booking.summary.crop'), booking.crop?.name || '—'],
+                [t('booking.summary.quantity'), `${booking.declared_quantity_q} Q`],
+                [t('booking.summary.slot'), `${booking.slot_date} ${booking.slot_start_time?.slice(0, 5)}`],
+                [t('booking.summary.mandi'), booking.centre?.name || '—'],
               ].map(([label, value]) => (
                 <div key={label}>
                   <p className="text-gray-400 text-xs">{label}</p>
@@ -260,7 +261,7 @@ export default function GateEntry() {
                 id="mark-gate-entry"
               >
                 <CheckCircle className="w-4 h-4" />
-                {justMarked ? 'Admitted!' : marking ? 'Marking...' : t('staff.gateEntry.markEntry')}
+                {justMarked ? t('staff.gateEntry.admitted') : marking ? t('staff.gateEntry.marking') : t('staff.gateEntry.markEntry')}
               </button>
             )}
           </div>

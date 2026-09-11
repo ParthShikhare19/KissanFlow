@@ -1,10 +1,13 @@
-/** 6-step slot booking wizard */
+/** 6-step slot booking wizard — simplified for low-literacy users:
+ *  emoji crop cards with bilingual names, tap-to-pick quantities. */
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-hot-toast'
 import { CheckCircle, ChevronLeft, ChevronRight, Loader2, Download, Smartphone } from 'lucide-react'
 import { get, post } from '@/utils/api'
+import { speak } from '@/utils/speech'
+import i18n from '@/i18n'
 import clsx from 'clsx'
 
 interface Crop { id: string; name: string; season: string; msp_per_quintal: number; crop_code: string }
@@ -16,6 +19,14 @@ const STEP_LABELS = [
   'booking.step1.title', 'booking.step2.title', 'booking.step3.title',
   'booking.step4.title', 'booking.step5.title', 'booking.step6.title',
 ]
+
+// crop_code → emoji + translated name key
+const CROP_META: Record<string, { emoji: string }> = {
+  WHT: { emoji: '🌾' }, RIC: { emoji: '🌾' }, MAZ: { emoji: '🌽' },
+  MST: { emoji: '🌱' }, SOY: { emoji: '🫘' }, COT: { emoji: '☁️' },
+}
+
+const QUICK_QUANTITIES = [5, 10, 25, 50, 100]
 
 export default function BookSlot() {
   const { t } = useTranslation()
@@ -46,14 +57,14 @@ export default function BookSlot() {
   }, [selectedCentre, selectedDate])
 
   const handleNext = () => {
-    if (step === 0 && !selectedCrop) { toast.error('Please select a crop'); return }
+    if (step === 0 && !selectedCrop) { toast.error(t('booking.error.crop')); return }
     if (step === 1) {
       const q = parseFloat(quantity)
-      if (!q || q < 1 || q > 500) { toast.error('Quantity must be between 1 and 500 quintals'); return }
+      if (!q || q < 1 || q > 500) { toast.error(t('booking.error.quantity')); return }
     }
-    if (step === 2 && !selectedCentre) { toast.error('Please select a mandi'); return }
-    if (step === 3 && !selectedDate) { toast.error('Please select a date'); return }
-    if (step === 4 && !selectedSlot) { toast.error('Please select a time slot'); return }
+    if (step === 2 && !selectedCentre) { toast.error(t('booking.error.centre')); return }
+    if (step === 3 && !selectedDate) { toast.error(t('booking.error.date')); return }
+    if (step === 4 && !selectedSlot) { toast.error(t('booking.error.slot')); return }
     setStep((s) => s + 1)
   }
 
@@ -69,9 +80,9 @@ export default function BookSlot() {
       })
       setBooking(result)
       setStep(6) // success step
-      toast.success('Booking confirmed!')
+      toast.success(t('booking.success.toast'))
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Booking failed'
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || t('booking.error.failed')
       toast.error(msg)
     } finally {
       setLoading(false)
@@ -98,6 +109,18 @@ export default function BookSlot() {
     return dates
   }
 
+  // Read the success screen aloud for farmers who can't read the QR card.
+  const readBookingAloud = () => {
+    if (!booking) return
+    const lang: 'hi' | 'en' = i18n.language === 'hi' ? 'hi' : 'en'
+    const text = lang === 'hi'
+      ? `बुकिंग हो गई। टोकन नंबर ${booking.token_number}. मंडी ${booking.centre?.name}. तारीख ${booking.slot_date}, समय ${booking.slot_start_time?.slice(0, 5)}.`
+      : `Booking done. Token number ${booking.token_number}. Mandi ${booking.centre?.name}. Date ${booking.slot_date}, time ${booking.slot_start_time?.slice(0, 5)}.`
+    speak(text, lang)
+  }
+
+  const cropName = (crop: Crop) => t(`crop.name.${crop.crop_code}`, { defaultValue: crop.name })
+
   if (step === 6 && booking) {
     return (
       <div className="max-w-md mx-auto text-center py-8">
@@ -111,7 +134,7 @@ export default function BookSlot() {
             <p className="text-xs text-gray-400 mb-1">{t('booking.success.token')}</p>
             <p className="text-3xl font-extrabold font-mono text-primary">{booking.token_number}</p>
             <p className="text-xs text-gray-500 mt-2">
-              {booking.centre?.name} &bull; {booking.slot_date} at {booking.slot_start_time?.slice(0, 5)}
+              {booking.centre?.name} &bull; {booking.slot_date} {t('booking.success.at')} {booking.slot_start_time?.slice(0, 5)}
             </p>
           </div>
           {booking.qr_code_base64 && (
@@ -121,8 +144,11 @@ export default function BookSlot() {
                 alt="Booking QR Code"
                 className="w-44 h-44 mx-auto rounded-xl border border-gray-200 p-2 shadow-xs"
               />
+              <button onClick={readBookingAloud} className="btn-secondary mt-3 w-full justify-center text-base py-3">
+                🔊 {t('pass.listen')}
+              </button>
               <button onClick={downloadQR} className="btn-secondary mt-3 w-full">
-                <Download className="w-4 h-4" /> Download QR Code
+                <Download className="w-4 h-4" /> {t('booking.success.download')}
               </button>
             </div>
           )}
@@ -130,11 +156,11 @@ export default function BookSlot() {
           <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-100 text-xs text-green-700 text-left flex items-start gap-2">
             <Smartphone className="w-4 h-4 text-green-700 flex-shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold">{t('booking.success.sms', { mobile: 'XXXXXXXX' })}:</span> Your slot <strong>{booking.token_number}</strong> confirmed at {booking.centre?.name}
+              <span className="font-semibold">{t('booking.success.sms', { mobile: 'XXXXXXXX' })}</span>
             </div>
           </div>
-          <button onClick={() => navigate('/farmer/dashboard')} className="btn-primary w-full mt-5">
-            Go to Dashboard
+          <button onClick={() => navigate('/farmer/dashboard')} className="btn-primary w-full mt-5 text-base py-3">
+            {t('booking.success.goDashboard')}
           </button>
         </div>
       </div>
@@ -158,37 +184,51 @@ export default function BookSlot() {
       </div>
 
       <div className="card p-6">
-        {/* Step 1: Select Crop */}
+        {/* Step 1: Select Crop — emoji cards with bilingual names */}
         {step === 0 && (
-          <div className="space-y-3 animate-fade-in">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 animate-fade-in">
             {crops.map((crop) => (
               <button
                 key={crop.id}
                 onClick={() => setSelectedCrop(crop)}
                 className={clsx(
-                  'w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all',
-                  selectedCrop?.id === crop.id ? 'border-primary bg-primary-50' : 'border-gray-100 hover:border-gray-300'
+                  'flex flex-col items-center justify-center p-5 rounded-2xl border-2 transition-all min-h-[120px]',
+                  selectedCrop?.id === crop.id ? 'border-primary bg-primary-50 shadow-sm' : 'border-gray-100 hover:border-gray-300'
                 )}
               >
-                <div className="text-left">
-                  <p className="font-semibold text-gray-900">{crop.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{t(`crop.season.${crop.season}`)} · Code: {crop.crop_code}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-primary text-lg">{t('booking.msp', { amount: crop.msp_per_quintal.toLocaleString('en-IN') })}</p>
-                </div>
+                <span className="text-4xl" aria-hidden>{CROP_META[crop.crop_code]?.emoji || '🌿'}</span>
+                <span className="font-bold text-gray-900 mt-2">{cropName(crop)}</span>
+                <span className="text-[11px] text-gray-400 font-mono">{crop.crop_code}</span>
+                <span className="text-xs font-bold text-primary mt-1">{t('booking.msp', { amount: crop.msp_per_quintal.toLocaleString('en-IN') })}</span>
               </button>
             ))}
           </div>
         )}
 
-        {/* Step 2: Quantity */}
+        {/* Step 2: Quantity — quick-pick buttons + free input */}
         {step === 1 && (
           <div className="animate-fade-in space-y-4">
-            <div className="p-4 bg-primary-50 rounded-xl">
-              <p className="text-sm text-primary font-medium">Selected: {selectedCrop?.name} · MSP ₹{selectedCrop?.msp_per_quintal}/Q</p>
+            <div className="p-4 bg-primary-50 rounded-xl flex items-center gap-3">
+              <span className="text-3xl" aria-hidden>{CROP_META[selectedCrop?.crop_code || '']?.emoji || '🌿'}</span>
+              <p className="text-sm text-primary font-semibold">
+                {cropName(selectedCrop!)} · MSP ₹{selectedCrop?.msp_per_quintal}/Q
+              </p>
             </div>
             <label className="label">{t('booking.quantity.label')}</label>
+            <div className="grid grid-cols-5 gap-2">
+              {QUICK_QUANTITIES.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setQuantity(String(q))}
+                  className={clsx(
+                    'py-4 rounded-xl border-2 text-lg font-extrabold transition-all',
+                    quantity === String(q) ? 'border-primary bg-primary text-white' : 'border-gray-200 bg-gray-50 text-gray-800 hover:border-primary-300'
+                  )}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
             <div className="relative">
               <input
                 type="number"
@@ -200,12 +240,12 @@ export default function BookSlot() {
                 placeholder="25"
                 id="booking-quantity"
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">Quintals</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">{t('booking.quantity.unit')}</span>
             </div>
             {quantity && parseFloat(quantity) > 0 && (
               <div className="p-4 bg-green-50 rounded-xl border border-green-100">
                 <p className="text-sm text-green-700 font-medium">
-                  Estimated Amount: <span className="text-xl font-bold">₹{(parseFloat(quantity) * (selectedCrop?.msp_per_quintal || 0)).toLocaleString('en-IN')}</span>
+                  {t('booking.estimated')}: <span className="text-xl font-bold">₹{(parseFloat(quantity) * (selectedCrop?.msp_per_quintal || 0)).toLocaleString('en-IN')}</span>
                 </p>
               </div>
             )}
@@ -231,7 +271,7 @@ export default function BookSlot() {
                 </div>
                 <div>
                   <span className="badge-green text-xs px-3 py-1 rounded-full bg-green-100 text-green-800 font-medium">
-                    {centre.daily_capacity} capacity/day
+                    {t('booking.capacityPerDay', { count: centre.daily_capacity })}
                   </span>
                 </div>
               </button>
@@ -245,7 +285,7 @@ export default function BookSlot() {
             <div className="grid grid-cols-7 gap-2">
               {getDatesForMonth().map((d) => {
                 const dateObj = new Date(d)
-                const dayName = dateObj.toLocaleDateString('en', { weekday: 'short' })
+                const dayName = dateObj.toLocaleDateString(i18n.language, { weekday: 'short' })
                 const dayNum = dateObj.getDate()
                 return (
                   <button
@@ -262,14 +302,14 @@ export default function BookSlot() {
                 )
               })}
             </div>
-            {selectedDate && <p className="text-sm text-primary font-medium mt-4">Selected: {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>}
+            {selectedDate && <p className="text-sm text-primary font-medium mt-4">{t('booking.selectedDate')}: {new Date(selectedDate).toLocaleDateString(i18n.language, { weekday: 'long', day: 'numeric', month: 'long' })}</p>}
           </div>
         )}
 
         {/* Step 5: Select Time Slot */}
         {step === 4 && (
           <div className="animate-fade-in">
-            <p className="text-sm text-gray-500 mb-4">{selectedDate} at {selectedCentre?.name}</p>
+            <p className="text-sm text-gray-500 mb-4">{selectedDate} · {selectedCentre?.name}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {slots.map((slot) => {
                 const isFull = slot.available === 0
@@ -303,16 +343,16 @@ export default function BookSlot() {
         {/* Step 6: Confirm */}
         {step === 5 && (
           <div className="animate-fade-in space-y-4">
-            <h3 className="text-base font-bold text-gray-900">Booking Summary</h3>
+            <h3 className="text-base font-bold text-gray-900">{t('booking.summary.title')}</h3>
             <div className="bg-gray-50 rounded-xl p-5 space-y-3 text-sm">
               {[
-                ['Crop', `${selectedCrop?.name} (${selectedCrop?.crop_code})`],
-                ['Quantity', `${quantity} Quintals`],
-                ['Mandi', selectedCentre?.name || ''],
-                ['Location', `${selectedCentre?.district}, ${selectedCentre?.state}`],
-                ['Date', new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })],
-                ['Slot', `${selectedSlot?.start_time} – ${selectedSlot?.end_time}`],
-                ['MSP Rate', `₹${selectedCrop?.msp_per_quintal}/Q`],
+                [t('booking.summary.crop'), `${cropName(selectedCrop!)} (${selectedCrop?.crop_code})`],
+                [t('booking.summary.quantity'), `${quantity} ${t('booking.quantity.unit')}`],
+                [t('booking.summary.mandi'), selectedCentre?.name || ''],
+                [t('booking.summary.location'), `${selectedCentre?.district}, ${selectedCentre?.state}`],
+                [t('booking.summary.date'), new Date(selectedDate).toLocaleDateString(i18n.language, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })],
+                [t('booking.summary.slot'), `${selectedSlot?.start_time} – ${selectedSlot?.end_time}`],
+                [t('booking.summary.msp'), `₹${selectedCrop?.msp_per_quintal}/Q`],
               ].map(([key, val]) => (
                 <div key={key} className="flex justify-between">
                   <span className="text-gray-500">{key}</span>
@@ -320,7 +360,7 @@ export default function BookSlot() {
                 </div>
               ))}
               <div className="border-t pt-3 flex justify-between">
-                <span className="text-gray-700 font-semibold">Estimated Payment</span>
+                <span className="text-gray-700 font-semibold">{t('booking.summary.estimated')}</span>
                 <span className="text-xl font-extrabold text-primary">
                   ₹{(parseFloat(quantity) * (selectedCrop?.msp_per_quintal || 0)).toLocaleString('en-IN')}
                 </span>
@@ -332,23 +372,23 @@ export default function BookSlot() {
         {/* Navigation */}
         <div className="flex gap-3 mt-6">
           {step > 0 && (
-            <button onClick={() => setStep((s) => s - 1)} className="btn-secondary">
+            <button onClick={() => setStep((s) => s - 1)} className="btn-secondary text-base px-5 py-3">
               <ChevronLeft className="w-4 h-4" /> {t('auth.register.back')}
             </button>
           )}
           {step < 5 ? (
-            <button onClick={handleNext} className="btn-primary flex-1" id={`booking-next-${step}`}>
+            <button onClick={handleNext} className="btn-primary flex-1 text-base py-3" id={`booking-next-${step}`}>
               {t('auth.register.next')} <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
             <button
               onClick={handleConfirm}
               disabled={loading}
-              className="btn-primary flex-1"
+              className="btn-primary flex-1 text-base py-3"
               id="booking-confirm"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {loading ? 'Booking...' : t('booking.confirm.button')}
+              {loading ? t('booking.loading') : t('booking.confirm.button')}
             </button>
           )}
         </div>

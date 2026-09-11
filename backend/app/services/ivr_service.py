@@ -45,24 +45,16 @@ async def lookup_farmer_by_mobile(mobile: str, db: Optional[AsyncSession] = None
 
 async def get_active_booking(farmer_id: uuid.UUID, db: Optional[AsyncSession] = None) -> dict | None:
     """
-    Return latest active booking + queue position for a farmer. None if no active booking.
+    Return the farmer's most relevant booking + queue position. None if none.
+
+    Uses the shared priority selector (#19) so an in-queue or processing
+    booking is never hidden behind a freshly booked future slot, and a fully
+    paid cycle is treated as "no active booking".
     """
+    from app.services.booking_selection import select_relevant_booking
+
     async def _query(session: AsyncSession):
-        result = await session.execute(
-            select(SlotBooking)
-            .where(
-                SlotBooking.farmer_id == farmer_id,
-                SlotBooking.status.in_([
-                    BookingStatus.BOOKED,
-                    BookingStatus.ARRIVED,
-                    BookingStatus.IN_QUEUE,
-                    BookingStatus.PROCESSING,
-                ])
-            )
-            .order_by(SlotBooking.created_at.desc())
-            .limit(1)
-        )
-        booking = result.scalar_one_or_none()
+        booking = await select_relevant_booking(session, farmer_id)
         if not booking:
             return None
 

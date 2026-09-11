@@ -3,7 +3,7 @@ import uuid
 import enum
 from sqlalchemy import String, Float, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from app.database import Base
 
 
@@ -17,7 +17,7 @@ class Crop(Base):
     __tablename__ = "crops"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     season: Mapped[CropSeason] = mapped_column(SAEnum(CropSeason), nullable=False)

@@ -2,7 +2,7 @@
 import uuid
 from datetime import date, time, datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.slot_booking import BookingStatus
 from app.schemas.crop import CropResponse
 from app.schemas.centre import CentreResponse
@@ -13,8 +13,16 @@ class BookingCreate(BaseModel):
     centre_id: uuid.UUID
     crop_id: uuid.UUID
     preferred_date: date
-    declared_quantity_q: float
+    declared_quantity_q: float = Field(gt=0, le=500)
     preferred_slot_start_time: Optional[time] = None
+
+    @field_validator("preferred_date")
+    @classmethod
+    def validate_preferred_date(cls, v: date) -> date:
+        from datetime import date as date_cls
+        if v < date_cls.today():
+            raise ValueError("Booking date cannot be in the past")
+        return v
 
     model_config = ConfigDict(
         json_schema_extra={

@@ -16,7 +16,7 @@ async def trigger_full_seed(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_role([UserRole.GOVT_ADMIN]))],
 ):
-    """Trigger full seed from API (calls seed logic inline)."""
+    """Trigger full seed from API (calls seed logic inline). Idempotent."""
     try:
         from seed import run_seed
         await run_seed(db)
@@ -29,8 +29,9 @@ async def trigger_full_seed(
 async def trigger_seed(
     seed_type: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_role([UserRole.GOVT_ADMIN]))],
 ):
-    """Dev-only endpoint to trigger specific seed operations."""
+    """Dev-only endpoint to trigger specific seed operations. Requires GOVT_ADMIN (#3)."""
     valid_types = ["centres-crops", "users-farmers", "bookings-transactions"]
     if seed_type not in valid_types:
         return APIResponse(success=False, error=f"Invalid seed type. Valid: {valid_types}")

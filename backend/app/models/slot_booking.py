@@ -5,7 +5,7 @@ import json
 from datetime import datetime, date, time
 from sqlalchemy import String, DateTime, Date, Time, ForeignKey, Enum as SAEnum, Float, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from app.database import Base
 
 
@@ -23,16 +23,16 @@ class SlotBooking(Base):
     __tablename__ = "slot_bookings"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=uuid.uuid4
     )
     farmer_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     centre_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("procurement_centres.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid, ForeignKey("procurement_centres.id", ondelete="CASCADE"), nullable=False, index=True
     )
     crop_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("crops.id"), nullable=False
+        Uuid, ForeignKey("crops.id"), nullable=False
     )
     slot_date: Mapped[date] = mapped_column(Date, nullable=False)
     slot_start_time: Mapped[time] = mapped_column(Time, nullable=False)

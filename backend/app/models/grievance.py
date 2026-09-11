@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import String, DateTime, ForeignKey, Enum as SAEnum, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from app.database import Base
 
 
@@ -28,13 +28,13 @@ class Grievance(Base):
     __tablename__ = "grievances"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=uuid.uuid4
     )
     farmer_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     slot_booking_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("slot_bookings.id", ondelete="SET NULL"), nullable=True
+        Uuid, ForeignKey("slot_bookings.id", ondelete="SET NULL"), nullable=True
     )
     category: Mapped[GrievanceCategory] = mapped_column(SAEnum(GrievanceCategory), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -42,7 +42,7 @@ class Grievance(Base):
         SAEnum(GrievanceStatus), nullable=False, default=GrievanceStatus.OPEN
     )
     assigned_to: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -27,36 +27,47 @@ export default function QueueManager() {
 
   useEffect(() => {
     get<{ id: string; name: string }[]>('/centres/').then((data) => {
-      setCentres(data)
-      if (data.length > 0) setCentreId(data[0].id)
+      // Staff are bound to their assigned centre by the backend; lock the picker.
+      const assigned = user?.assigned_centre_id
+      const visible = assigned ? data.filter((c) => c.id === assigned) : data
+      setCentres(visible)
+      if (visible.length > 0) setCentreId(visible[0].id)
     })
-  }, [])
+  }, [user?.assigned_centre_id])
 
   useEffect(() => {
     if (!centreId) return
     get<QueueEntry[]>(`/queue/${centreId}`).then(setCentreQueue)
   }, [centreId])
 
-  // Timer for currently processing farmer
+  // Timer for the currently processing farmer — keyed on the entry's id so a
+  // queue reshuffle never carries the previous farmer's elapsed time (#16).
+  const processingId = centreQueue.find(
+    (e) => e.status === 'CALLED' || e.status === 'PROCESSING'
+  )?.id
+
   useEffect(() => {
-    const processing = centreQueue.find((e) => e.status === 'CALLED' || e.status === 'PROCESSING')
-    if (processing) {
+    if (processingId) {
       setElapsedSeconds(0)
       timerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [centreQueue.length])
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }, [processingId])
 
   const handleCallNext = async () => {
     if (!centreId) return
     setCalling(true)
     try {
       await post('/queue/call-next', { centre_id: centreId })
-      toast.success('Next farmer called!')
+      toast.success(t('staff.queue.calledToast'))
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to call next'
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || t('staff.queue.callFailed')
       toast.error(msg)
     } finally {
       setCalling(false)
@@ -92,7 +103,7 @@ export default function QueueManager() {
             <div className="text-right flex flex-col items-end gap-3">
               <div>
                 <div className="text-3xl font-bold text-accent">{formatTime(elapsedSeconds)}</div>
-                <p className="text-xs text-gray-500 mt-1">Time elapsed</p>
+                <p className="text-xs text-gray-500 mt-1">{t('staff.queue.timeElapsed')}</p>
               </div>
               <Link
                 to={`/staff/transaction/${currentlyProcessing.slot_booking_id}`}
@@ -119,12 +130,12 @@ export default function QueueManager() {
       >
         {calling ? (
           <span className="flex items-center gap-2 justify-center">
-            <Loader2 className="w-5 h-5 animate-spin" /> Calling...
+            <Loader2 className="w-5 h-5 animate-spin" /> {t('staff.queue.calling')}
           </span>
         ) : (
           <span className="flex items-center gap-2 justify-center">
             <Users className="w-5 h-5" />
-            {t('staff.queue.callNext')} {waitingQueue.length > 0 ? `(${waitingQueue.length} waiting)` : ''}
+            {t('staff.queue.callNext')} {waitingQueue.length > 0 ? `(${t('staff.queue.waitingCount', { count: waitingQueue.length })})` : ''}
           </span>
         )}
       </button>
@@ -132,8 +143,8 @@ export default function QueueManager() {
       {/* Queue List */}
       <div className="card overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="section-title">Waiting Queue</h2>
-          <span className="badge badge-blue">{waitingQueue.length} waiting</span>
+          <h2 className="section-title">{t('staff.queue.waitingList')}</h2>
+          <span className="badge badge-blue">{t('staff.queue.waitingCount', { count: waitingQueue.length })}</span>
         </div>
 
         {waitingQueue.length === 0 ? (

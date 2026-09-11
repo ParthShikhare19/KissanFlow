@@ -2,7 +2,7 @@
 import uuid
 from sqlalchemy import String, Float, Integer, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from app.database import Base
 
 
@@ -10,7 +10,7 @@ class ProcurementCentre(Base):
     __tablename__ = "procurement_centres"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     district: Mapped[str] = mapped_column(String(200), nullable=False)

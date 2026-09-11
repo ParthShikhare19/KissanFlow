@@ -1,10 +1,11 @@
 /** Top navbar with logo, language toggle, and notification bell. */
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Bell, Globe, LogOut, Menu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
+import { get } from '@/utils/api'
 
 interface NavbarProps {
   onMenuClick?: () => void
@@ -13,8 +14,18 @@ interface NavbarProps {
 export function Navbar({ onMenuClick }: NavbarProps) {
   const { t, i18n } = useTranslation()
   const { user, logout } = useAuthStore()
-  const { unreadCount } = useNotificationStore()
+  const { unreadCount, setUnreadCount } = useNotificationStore()
   const navigate = useNavigate()
+
+  // Global unread badge from the server (#15) — independent of any page/filter.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    get<{ unread_count: number }>(`/notifications/${user.id}/unread-count`)
+      .then((res) => { if (!cancelled) setUnreadCount(res.unread_count) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [user?.id, setUnreadCount])
 
   const toggleLanguage = () => {
     const next = i18n.language === 'en' ? 'hi' : 'en'

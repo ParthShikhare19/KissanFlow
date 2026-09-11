@@ -33,7 +33,15 @@ CLIENT_URL = os.environ.get("CLIENT_URL", "http://localhost:5173")
 
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
-    """Start APScheduler on startup, shutdown on exit."""
+    """Ensure schema exists, start APScheduler on startup, shutdown on exit."""
+    from seed import create_tables, add_missing_columns
+    try:
+        await create_tables()
+        await add_missing_columns()
+    except Exception as exc:
+        # A read-only or not-yet-reachable database should not block startup;
+        # the init container (docker) handles schema setup instead.
+        print(f"[KissanFlow] Schema check skipped: {exc}")
     scheduler = setup_scheduler()
     scheduler.start()
     print("[KissanFlow] APScheduler started with 3 background jobs.")

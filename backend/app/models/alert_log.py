@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import String, DateTime, ForeignKey, Enum as SAEnum, Boolean, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from app.database import Base
 
 
@@ -25,10 +25,10 @@ class AlertLog(Base):
     __tablename__ = "alert_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=uuid.uuid4
     )
     centre_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("procurement_centres.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid, ForeignKey("procurement_centres.id", ondelete="CASCADE"), nullable=False, index=True
     )
     type: Mapped[AlertType] = mapped_column(SAEnum(AlertType), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)

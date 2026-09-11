@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.database import get_db
 from app.models.slot_booking import SlotBooking, BookingStatus
+from app.models.queue_entry import QueueEntry, QueueStatus
 from app.models.transaction import Transaction, PaymentStatus, ProcurementStatus
 from app.models.user import User, UserRole
 from app.models.farmer_profile import FarmerProfile
@@ -16,9 +17,39 @@ from app.schemas.transaction import TransactionCreate, QualityUpdate, WeighmentU
 from app.schemas.common import APIResponse
 from app.middleware.auth import CurrentUser, require_role
 from app.services.mock_pfms import MockPFMSService
+from app.socketio_server import emit_queue_updated
 
 router = APIRouter(tags=["transactions"])
 pfms = MockPFMSService()
+
+
+async def _build_queue_payload(db: AsyncSession, centre_id: uuid.UUID) -> list[dict]:
+    """Build the live queue payload for a centre (reused from the queue router logic)."""
+    from app.routers.queue import _build_queue_payload
+    return await _build_queue_payload(db, centre_id)
+
+
+async def _enforce_transaction_centre(
+    current_user: User,
+    centre_id: uuid.UUID,
+    action: str,
+) -> None:
+    """Staff may only operate on transactions at their assigned centre (#11).
+
+    Officers keep oversight: they may confirm/pay at any centre but still
+    cannot record quality/weighment data for a centre they aren't bound to
+    unless assigned. Govt admins retain full access.
+    """
+    if current_user.role == UserRole.GOVT_ADMIN:
+        return
+    if current_user.assigned_centre_id is None:
+        # Unassigned accounts (e.g. officers without a centre) retain oversight.
+        return
+    if current_user.assigned_centre_id != centre_id:
+        raise HTTPException(
+            status_code=403,
+            detail=f"You are not assigned to this centre — cannot {action} here",
+        )
 
 
 async def _enrich_transaction(txn: Transaction, db: AsyncSession) -> TransactionResponse:
@@ -55,6 +86,8 @@ async def create_transaction(
     booking = booking_result.scalar_one_or_none()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
+
+    await _enforce_transaction_centre(current_user, booking.centre_id, "create transactions")
 
     # Check for existing transaction
     existing_result = await db.execute(
@@ -94,6 +127,10 @@ async def get_transaction(
     txn = result.scalar_one_or_none()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    if txn.farmer_id != current_user.id and current_user.role not in [
+        UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR
+    ]:
+        raise HTTPException(status_code=403, detail="Not authorized to view this transaction")
     return APIResponse(success=True, data=await _enrich_transaction(txn, db))
 
 
@@ -110,6 +147,10 @@ async def get_transaction_by_booking(
     txn = result.scalar_one_or_none()
     if not txn:
         raise HTTPException(status_code=404, detail="No transaction for this booking")
+    if txn.farmer_id != current_user.id and current_user.role not in [
+        UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR
+    ]:
+        raise HTTPException(status_code=403, detail="Not authorized to view this transaction")
     return APIResponse(success=True, data=await _enrich_transaction(txn, db))
 
 
@@ -117,9 +158,16 @@ async def get_transaction_by_booking(
 async def list_centre_transactions(
     centre_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: CurrentUser,
+    current_user: Annotated[User, Depends(require_role(
+        [UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN]
+    ))],
 ):
     """List recent transactions for a procurement centre."""
+    if current_user.role != UserRole.GOVT_ADMIN and (
+        current_user.assigned_centre_id is not None
+        and current_user.assigned_centre_id != centre_id
+    ):
+        raise HTTPException(status_code=403, detail="Not authorized for this centre")
     result = await db.execute(
         select(Transaction)
         .where(Transaction.centre_id == centre_id)
@@ -144,11 +192,14 @@ async def update_quality(
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    await _enforce_transaction_centre(current_user, txn.centre_id, "record quality data")
+
     txn.moisture_percent = body.moisture_percent
     txn.foreign_matter_percent = body.foreign_matter_percent
     txn.quality_status = body.quality_status
     txn.quality_notes = body.quality_notes
     txn.quality_photo_url = body.quality_photo_url
+    txn.quality_done_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(txn)
@@ -167,10 +218,13 @@ async def update_weighment(
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    await _enforce_transaction_centre(current_user, txn.centre_id, "record weighment data")
+
     txn.gross_weight_q = body.gross_weight_q
     txn.tare_weight_q = body.tare_weight_q
     txn.net_weight_q = round(body.gross_weight_q - body.tare_weight_q, 3)
     txn.weighment_photo_url = body.weighment_photo_url
+    txn.weighment_done_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(txn)
@@ -188,6 +242,8 @@ async def confirm_transaction(
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    await _enforce_transaction_centre(current_user, txn.centre_id, "confirm procurement")
+
     if txn.net_weight_q is None or txn.msp_per_q is None:
         raise HTTPException(status_code=400, detail="Weighment must be completed before confirmation")
     if txn.quality_status is None:
@@ -198,25 +254,22 @@ async def confirm_transaction(
 
     txn.total_amount = round(txn.net_weight_q * txn.msp_per_q, 2)
     txn.procurement_status = ProcurementStatus.CONFIRMED
-
-    # Update booking status to COMPLETED
-    booking_result = await db.execute(
-        select(SlotBooking).where(SlotBooking.id == txn.slot_booking_id)
-    )
-    booking = booking_result.scalar_one_or_none()
-    if booking:
-        booking.status = BookingStatus.COMPLETED
+    # Payment has not happened yet, so the booking stays PROCESSING (#12).
+    # It becomes COMPLETED only when PFMS marks the payment as PAID.
 
     # Notify farmer
     notif = Notification(
         id=uuid.uuid4(),
         user_id=txn.farmer_id,
         title="Procurement Confirmed",
-        body=f"Your crop procurement of {txn.net_weight_q}Q has been confirmed. Total: ₹{txn.total_amount:,.0f}",
+        body=(
+            f"Your crop procurement of {txn.net_weight_q}Q has been confirmed. "
+            f"Total: ₹{txn.total_amount:,.0f}. Payment will be transferred via PFMS."
+        ),
         channel=NotificationChannel.APP,
     )
     db.add(notif)
-    txn.completed_at = datetime.now(timezone.utc)
+    txn.confirmed_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(txn)
@@ -234,6 +287,8 @@ async def initiate_payment(
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    await _enforce_transaction_centre(current_user, txn.centre_id, "initiate payment")
+
     if txn.procurement_status != ProcurementStatus.CONFIRMED:
         raise HTTPException(status_code=400, detail="Transaction must be confirmed before payment")
 
@@ -241,6 +296,7 @@ async def initiate_payment(
         raise HTTPException(status_code=400, detail=f"Payment already in status: {txn.payment_status.value}")
 
     txn.payment_status = PaymentStatus.INITIATED
+    txn.payment_initiated_at = datetime.now(timezone.utc)
 
     # Fetch farmer bank details
     fp_result = await db.execute(
@@ -262,6 +318,27 @@ async def initiate_payment(
     confirm_result = await pfms.confirm_payment(pfms_result["pfms_ref"])
     txn.pfms_transaction_id = confirm_result["utr"]
     txn.payment_status = PaymentStatus.PAID
+    txn.paid_at = datetime.now(timezone.utc)
+    txn.completed_at = txn.paid_at
+
+    # Payment received — only now is the procurement cycle complete (#12).
+    booking_result = await db.execute(
+        select(SlotBooking).where(SlotBooking.id == txn.slot_booking_id)
+    )
+    booking = booking_result.scalar_one_or_none()
+    if booking:
+        booking.status = BookingStatus.COMPLETED
+
+    # Release the farmer's queue entry so the live queue reflects reality.
+    queue_result = await db.execute(
+        select(QueueEntry).where(QueueEntry.slot_booking_id == txn.slot_booking_id)
+    )
+    queue_entry = queue_result.scalar_one_or_none()
+    if queue_entry and queue_entry.status != QueueStatus.DONE:
+        queue_entry.status = QueueStatus.DONE
+        if booking:
+            queue_payload = await _build_queue_payload(db, txn.centre_id)
+            await emit_queue_updated(str(txn.centre_id), queue_payload)
 
     # Notify farmer
     notif = Notification(
@@ -278,4 +355,5 @@ async def initiate_payment(
 
     await db.commit()
     await db.refresh(txn)
+
     return APIResponse(success=True, data=await _enrich_transaction(txn, db))

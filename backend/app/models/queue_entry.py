@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import Integer, DateTime, ForeignKey, Enum as SAEnum, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from app.database import Base
 
 
@@ -19,13 +19,13 @@ class QueueEntry(Base):
     __tablename__ = "queue_entries"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=uuid.uuid4
     )
     slot_booking_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("slot_bookings.id", ondelete="CASCADE"), unique=True, nullable=False
+        Uuid, ForeignKey("slot_bookings.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     centre_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("procurement_centres.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid, ForeignKey("procurement_centres.id", ondelete="CASCADE"), nullable=False, index=True
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     estimated_wait_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

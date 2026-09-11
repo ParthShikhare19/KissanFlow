@@ -11,7 +11,7 @@ import clsx from 'clsx'
 export default function Notifications() {
   const { t } = useTranslation()
   const { user } = useAuthStore()
-  const { setNotifications, markRead, markAllRead } = useNotificationStore()
+  const { setNotifications, setUnreadCount, markRead } = useNotificationStore()
   const [notifications, setLocal] = useState<AppNotification[]>([])
   const [filter, setFilter] = useState<'ALL' | 'APP' | 'SMS' | 'IVR'>('ALL')
   const [loading, setLoading] = useState(true)
@@ -28,7 +28,10 @@ export default function Notifications() {
       setLocal(res.items)
       setTotal(res.total)
       setNotifications(res.items)
-    } catch { toast.error('Failed to load notifications') }
+      // True global unread count (#15) — not derived from this page.
+      const count = await get<{ unread_count: number }>(`/notifications/${user.id}/unread-count`)
+      setUnreadCount(count.unread_count)
+    } catch { toast.error(t('notifications.loadFailed')) }
     finally { setLoading(false) }
   }
 
@@ -39,13 +42,22 @@ export default function Notifications() {
       await put(`/notifications/${id}/read`)
       markRead(id)
       setLocal((l) => l.map((n) => n.id === id ? { ...n, is_read: true } : n))
-    } catch { toast.error('Failed to mark as read') }
+      if (user) {
+        const count = await get<{ unread_count: number }>(`/notifications/${user.id}/unread-count`)
+        setUnreadCount(count.unread_count)
+      }
+    } catch { toast.error(t('notifications.markFailed')) }
   }
 
   const handleMarkAllRead = async () => {
-    notifications.filter((n) => !n.is_read).forEach((n) => handleMarkRead(n.id))
-    markAllRead()
-    toast.success('All notifications marked as read')
+    if (!user) return
+    try {
+      // Single server-side bulk update — covers every page (#14).
+      await put(`/notifications/${user.id}/read-all`)
+      setLocal((l) => l.map((n) => ({ ...n, is_read: true })))
+      setUnreadCount(0)
+      toast.success(t('notifications.allMarked'))
+    } catch { toast.error(t('notifications.markFailed')) }
   }
 
   const FILTERS: Array<{ key: 'ALL' | 'APP' | 'SMS' | 'IVR'; label: string }> = [

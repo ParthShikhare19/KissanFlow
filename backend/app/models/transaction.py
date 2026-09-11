@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import String, Float, DateTime, ForeignKey, Enum as SAEnum, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Uuid
 from app.database import Base
 
 
@@ -32,19 +32,19 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=uuid.uuid4
     )
     slot_booking_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("slot_bookings.id", ondelete="CASCADE"), unique=True, nullable=False
+        Uuid, ForeignKey("slot_bookings.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     farmer_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        Uuid, ForeignKey("users.id"), nullable=False, index=True
     )
     centre_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("procurement_centres.id"), nullable=False
+        Uuid, ForeignKey("procurement_centres.id"), nullable=False
     )
     crop_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("crops.id"), nullable=False
+        Uuid, ForeignKey("crops.id"), nullable=False
     )
     gross_weight_q: Mapped[float | None] = mapped_column(Float, nullable=True)
     tare_weight_q: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -66,9 +66,15 @@ class Transaction(Base):
     payment_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
     pfms_transaction_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     staff_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        Uuid, ForeignKey("users.id"), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Persisted per-stage timestamps so process timing is measured, not estimated.
+    quality_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    weighment_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_initiated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

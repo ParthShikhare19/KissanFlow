@@ -12,12 +12,18 @@ from app.models.user import User
 from app.models.notification import Notification, NotificationChannel
 from app.utils.qr_generator import generate_qr_base64
 
+MAX_QUANTITY_Q = 500
+
 
 class SlotAllocationService:
     """
     Allocates the optimal time slot for a farmer's crop booking.
     Divides 9AM-5PM into slots of avg_processing_time_minutes.
     Finds first available slot on preferred_date or within next 7 days.
+
+    Capacity counting and token sequencing run inside a PostgreSQL
+    transaction-scoped advisory lock keyed on (centre, date), so two
+    concurrent bookings cannot grab the same slot capacity or token number.
     """
 
     OPERATING_START = time(9, 0)
@@ -33,6 +39,12 @@ class SlotAllocationService:
         preferred_slot_start_time: time | None,
         db: AsyncSession,
     ) -> SlotBooking:
+        # Defense-in-depth validation (the API schema validates too).
+        if declared_qty <= 0 or declared_qty > MAX_QUANTITY_Q:
+            raise ValueError(f"Declared quantity must be between 1 and {MAX_QUANTITY_Q} quintals")
+        if preferred_date < date.today():
+            raise ValueError("Booking date cannot be in the past")
+
         # Fetch centre and crop
         centre_result = await db.execute(
             select(ProcurementCentre).where(ProcurementCentre.id == centre_id)
@@ -53,6 +65,10 @@ class SlotAllocationService:
             raise ValueError("No valid slots can be computed for this centre")
 
         per_slot_capacity = max(1, centre.daily_capacity // total_slots)
+
+        # Serialize concurrent allocations for this centre across the whole
+        # 8-day search window (same lock key regardless of preferred date).
+        await self._acquire_allocation_lock(db, centre_id)
 
         # Search preferred_date + next 7 days
         allocated_date = None
@@ -79,7 +95,7 @@ class SlotAllocationService:
         if not allocated_slot or not allocated_date:
             raise ValueError("No available slots in the next 7 days")
 
-        # Generate sequential token number
+        # Generate sequential token number (under the advisory lock)
         token_num = await self._next_token_seq(db, crop.crop_code)
         token_number = f"{crop.crop_code}-{token_num:05d}"
 
@@ -139,6 +155,21 @@ class SlotAllocationService:
         booking.qr_code_data = json.dumps({**qr_data, "_qr_base64": qr_base64})
         return booking
 
+    async def _acquire_allocation_lock(self, db: AsyncSession, centre_id: uuid.UUID) -> None:
+        """Serialize slot allocation per centre on PostgreSQL.
+
+        Uses a transaction-scoped advisory lock so the lock is released
+        automatically when the request's transaction commits or rolls back.
+        Non-PostgreSQL backends (SQLite in tests) are single-writer anyway
+        and skip the lock.
+        """
+        bind = getattr(db, "bind", None)
+        if bind is None or getattr(bind.dialect, "name", "") != "postgresql":
+            return
+        # Single-bigint form of pg_advisory_xact_lock (mask to signed 63 bits).
+        key = uuid.uuid5(uuid.NAMESPACE_OID, f"kissanflow:slot-alloc:{centre_id}")
+        await db.execute(select(func.pg_advisory_xact_lock(key.int & 0x7FFFFFFFFFFFFFFF)))
+
     def _build_slots(self, avg_minutes: int) -> list[tuple[time, time]]:
         """Divide 9AM-5PM into slots of avg_minutes each."""
         slots = []
@@ -177,11 +208,20 @@ class SlotAllocationService:
         return counts
 
     async def _next_token_seq(self, db: AsyncSession, crop_code: str) -> int:
-        """Get next sequential number for this crop code."""
+        """Get next sequential number for this crop code.
+
+        Uses the highest existing suffix rather than a row count, so deleted
+        or cancelled bookings never cause duplicate token numbers.
+        """
         result = await db.execute(
-            select(func.count()).where(
+            select(SlotBooking.token_number).where(
                 SlotBooking.token_number.like(f"{crop_code}-%")
             )
         )
-        count = result.scalar() or 0
-        return count + 1
+        max_seq = 0
+        prefix_len = len(crop_code) + 1
+        for (token,) in result.all():
+            suffix = token[prefix_len:]
+            if suffix.isdigit():
+                max_seq = max(max_seq, int(suffix))
+        return max_seq + 1

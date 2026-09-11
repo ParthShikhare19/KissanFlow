@@ -104,12 +104,9 @@ export default function Landing() {
             {t('app.name')}
           </h1>
 
-          {/* Tagline in both languages */}
-          <p className="text-xl md:text-2xl text-white/90 font-medium mb-2 animate-fade-in">
+          {/* Tagline */}
+          <p className="text-xl md:text-2xl text-white/90 font-medium mb-10 animate-fade-in">
             {t('landing.hero.subtitle')}
-          </p>
-          <p className="text-2xl md:text-3xl text-white/80 font-semibold mb-10 animate-fade-in" style={{ fontFamily: 'sans-serif' }}>
-            {t('landing.hero.subtitle_hi')}
           </p>
 
           <Link
@@ -199,7 +196,7 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-gray-100 py-8 px-6 text-center">
         <p className="text-gray-500 text-sm">
-          <span className="font-semibold text-primary">KissanFlow — अन्नसेतु</span>
+          <span className="font-semibold text-primary">KissanFlow</span>
           {' '}| Smart India Hackathon 2024 | Ministry of Agriculture & Farmers Welfare, Government of India
         </p>
       </footer>
