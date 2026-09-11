@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: annsetu_postgres
+    environment:
+      POSTGRES_DB: annsetu
+      POSTGRES_USER: annsetu
+      POSTGRES_PASSWORD: annsetu
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U annsetu -d annsetu"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: annsetu_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python seed.py
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://annsetu:annsetu@postgres:5432/annsetu}
+      - JWT_SECRET=${JWT_SECRET:-demo-only-change-before-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-demo-refresh-secret-change-before-production}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: annsetu_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://annsetu:annsetu@postgres:5432/annsetu}
+      - JWT_SECRET=${JWT_SECRET:-demo-only-change-before-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-demo-refresh-secret-change-before-production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CLIENT_URL=${CLIENT_URL:-http://localhost:5173}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: annsetu_frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
