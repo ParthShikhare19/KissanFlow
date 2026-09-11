@@ -1,5 +1,5 @@
 """
-AnnSetu — Database Seed Script
+KissanFlow — Database Seed Script
 Run: python seed.py
 
 Inserts demo data in correct FK order.
@@ -281,12 +281,12 @@ async def run_seed(db=None):
         ("Queue Update", "You are now #5 in queue. Estimated wait: 25 minutes.", NotificationChannel.APP),
         ("Payment Received 💰", "₹45,650 has been credited to your account. UTR: UTR20241015XXXX", NotificationChannel.APP),
         ("Grievance Update", "Your grievance GRV-001 is now under review.", NotificationChannel.APP),
-        ("SMS Confirmation", "AnnSetu: Your slot WHT-00001 confirmed at Ludhiana Mandi A on 15/01/2025 10:00", NotificationChannel.SMS),
+        ("SMS Confirmation", "KissanFlow: Your slot WHT-00001 confirmed at Ludhiana Mandi A on 15/01/2025 10:00", NotificationChannel.SMS),
         ("Processing Delay Alert", "Transaction pending quality check for >90 minutes at Karnal Hub.", NotificationChannel.APP),
         ("Slot Booked via IVR", "Slot booked successfully via IVR. Token: RIC-00003", NotificationChannel.IVR),
         ("Quality Accepted", "Your wheat lot has been accepted. Quality: Good", NotificationChannel.APP),
         ("Congestion Alert", "High footfall expected tomorrow at Amritsar Centre.", NotificationChannel.APP),
-        ("Registration Complete", "Welcome to AnnSetu! Your profile is complete.", NotificationChannel.APP),
+        ("Registration Complete", "Welcome to KissanFlow! Your profile is complete.", NotificationChannel.APP),
     ]
     all_notif_users = farmers + staff[:2] + officers[:2]
     for i, (title, body, channel) in enumerate(notif_data):
@@ -308,7 +308,7 @@ async def run_seed(db=None):
 
     # ── Print Demo Credentials ──────────────────────────────────────────────────
     print("\n" + "="*60)
-    print("   ANNSETU — DEMO CREDENTIALS")
+    print("   KISSANFLOW — DEMO CREDENTIALS")
     print("="*60)
     roles = {
         "FARMER": ("farmer123", "9876543210 / 9876543211 / 9876543212"),
@@ -327,6 +327,222 @@ async def run_seed(db=None):
         await db.close()
 
 
+async def ensure_demo_bookings(db):
+    """Add stable bookings for completed, ongoing, and future-flow testing."""
+    demo_tokens = {"DEMO-COMP-001", "DEMO-QUEUE-001", "DEMO-FUTR-001"}
+    existing = await db.scalars(
+        select(SlotBooking).where(SlotBooking.token_number.in_(demo_tokens))
+    )
+    if existing.first():
+        print("[OK] Demo booking scenarios already exist; skipping.")
+        return
+
+    farmers = {
+        mobile: await db.scalar(select(User).where(User.mobile == mobile))
+        for mobile in ("9876543210", "9876543211", "9876543212")
+    }
+    centre = await db.scalar(
+        select(ProcurementCentre).where(ProcurementCentre.name == "Ludhiana Mandi A")
+    )
+    crops = {
+        name: await db.scalar(select(Crop).where(Crop.name == name))
+        for name in ("Wheat", "Rice", "Mustard")
+    }
+    if not centre or any(value is None for value in farmers.values()) or any(
+        value is None for value in crops.values()
+    ):
+        print("[WARN] Demo booking scenarios skipped: base seed data is incomplete.")
+        return
+
+    today = date.today()
+    now = datetime.now(timezone.utc)
+    scenarios = [
+        (
+            "DEMO-COMP-001", farmers["9876543210"], crops["Wheat"],
+            today - timedelta(days=1), time(10, 0), BookingStatus.COMPLETED,
+        ),
+        (
+            "DEMO-QUEUE-001", farmers["9876543211"], crops["Rice"],
+            today, time(11, 0), BookingStatus.IN_QUEUE,
+        ),
+        (
+            "DEMO-FUTR-001", farmers["9876543212"], crops["Mustard"],
+            today + timedelta(days=2), time(9, 0), BookingStatus.BOOKED,
+        ),
+    ]
+    created = {}
+    for token, farmer, crop, slot_date, slot_start, status in scenarios:
+        qr_data = {
+            "token": token,
+            "farmer_id": str(farmer.id),
+            "centre_id": str(centre.id),
+            "slot_date": slot_date.isoformat(),
+            "slot_start": slot_start.strftime("%H:%M"),
+            "crop_id": str(crop.id),
+        }
+        booking = SlotBooking(
+            id=uuid.uuid4(),
+            farmer_id=farmer.id,
+            centre_id=centre.id,
+            crop_id=crop.id,
+            slot_date=slot_date,
+            slot_start_time=slot_start,
+            slot_end_time=time(slot_start.hour + 1, slot_start.minute),
+            token_number=token,
+            qr_code_data=json.dumps(qr_data),
+            status=status,
+            declared_quantity_q=25.0,
+            created_at=now - timedelta(days=1 if status == BookingStatus.COMPLETED else 0),
+        )
+        db.add(booking)
+        created[token] = booking
+    await db.flush()
+
+    completed = created["DEMO-COMP-001"]
+    db.add(Transaction(
+        id=uuid.uuid4(),
+        slot_booking_id=completed.id,
+        farmer_id=completed.farmer_id,
+        centre_id=completed.centre_id,
+        crop_id=completed.crop_id,
+        gross_weight_q=26.0,
+        tare_weight_q=1.0,
+        net_weight_q=25.0,
+        msp_per_q=crops["Wheat"].msp_per_quintal,
+        total_amount=25.0 * crops["Wheat"].msp_per_quintal,
+        quality_status=QualityStatus.ACCEPTED,
+        procurement_status=ProcurementStatus.CONFIRMED,
+        payment_status=PaymentStatus.PAID,
+        payment_ref="PFMS-DEMO-001",
+        pfms_transaction_id="UTR-DEMO-001",
+        completed_at=now - timedelta(hours=4),
+        created_at=now - timedelta(days=1),
+    ))
+
+    ongoing = created["DEMO-QUEUE-001"]
+    db.add(Transaction(
+        id=uuid.uuid4(),
+        slot_booking_id=ongoing.id,
+        farmer_id=ongoing.farmer_id,
+        centre_id=ongoing.centre_id,
+        crop_id=ongoing.crop_id,
+        msp_per_q=crops["Rice"].msp_per_quintal,
+        quality_status=QualityStatus.ACCEPTED,
+        procurement_status=ProcurementStatus.PENDING,
+        payment_status=PaymentStatus.NOT_INITIATED,
+        created_at=now,
+    ))
+    db.add(QueueEntry(
+        id=uuid.uuid4(),
+        slot_booking_id=ongoing.id,
+        centre_id=ongoing.centre_id,
+        position=1,
+        estimated_wait_minutes=20,
+        status=QueueStatus.WAITING,
+        gate_entry_time=now - timedelta(minutes=12),
+    ))
+    await db.flush()
+    print("[OK] Added demo bookings: completed, ongoing queue, and future slot")
+
+
+async def ensure_busy_demo_data(db):
+    """Add a deterministic busy-day workload for dashboards and process timing."""
+    existing_load = await db.scalar(
+        select(SlotBooking.id).where(SlotBooking.token_number.like("LOAD-%")).limit(1)
+    )
+    if existing_load:
+        print("[OK] Busy demo workload already exists; skipping.")
+        return
+
+    farmers = list((await db.scalars(select(User).where(User.role == UserRole.FARMER))).all())
+    staff = list((await db.scalars(select(User).where(User.role == UserRole.MANDI_STAFF))).all())
+    centres = list((await db.scalars(select(ProcurementCentre))).all())
+    crops = list((await db.scalars(select(Crop))).all())
+    if not farmers or not staff or not centres or not crops:
+        print("[WARN] Busy demo workload skipped: base seed data is incomplete.")
+        return
+
+    today = date.today()
+    now = datetime.now(timezone.utc)
+    created_bookings = []
+    for index in range(60):
+        day_offset = (index % 15) - 7
+        slot_date = today + timedelta(days=day_offset)
+        slot_start = time(9 + (index % 8), 0 if index % 2 == 0 else 30)
+        if slot_start >= time(17, 0):
+            slot_start = time(16, 0)
+        slot_end = time(slot_start.hour + 1, slot_start.minute)
+        if slot_end > time(17, 0):
+            slot_end = time(17, 0)
+
+        if day_offset < 0:
+            status = BookingStatus.CANCELLED if index % 13 == 0 else BookingStatus.COMPLETED
+        elif day_offset == 0:
+            status = [BookingStatus.BOOKED, BookingStatus.IN_QUEUE, BookingStatus.PROCESSING][(index // 15) % 3]
+        else:
+            status = BookingStatus.BOOKED
+
+        farmer = farmers[index % len(farmers)]
+        centre = centres[index % len(centres)]
+        crop = crops[index % len(crops)]
+        created_at = now - timedelta(days=max(0, -day_offset), hours=4 + index % 5)
+        token = f"LOAD-{index + 1:04d}"
+        qr_data = {
+            "token": token,
+            "farmer_id": str(farmer.id),
+            "centre_id": str(centre.id),
+            "slot_date": slot_date.isoformat(),
+            "slot_start": slot_start.strftime("%H:%M"),
+            "crop_id": str(crop.id),
+        }
+        booking = SlotBooking(
+            id=uuid.uuid4(), farmer_id=farmer.id, centre_id=centre.id, crop_id=crop.id,
+            slot_date=slot_date, slot_start_time=slot_start, slot_end_time=slot_end,
+            token_number=token, qr_code_data=json.dumps(qr_data), status=status,
+            declared_quantity_q=round(12 + (index * 7) % 70, 2), created_at=created_at,
+        )
+        db.add(booking)
+        created_bookings.append((booking, farmer, centre, crop, index))
+    await db.flush()
+
+    for booking, farmer, centre, crop, index in created_bookings:
+        if booking.status not in [BookingStatus.COMPLETED, BookingStatus.IN_QUEUE, BookingStatus.PROCESSING]:
+            continue
+        gate_entry = booking.created_at + timedelta(minutes=35 + index % 35)
+        queue_status = QueueStatus.DONE if booking.status == BookingStatus.COMPLETED else (
+            QueueStatus.PROCESSING if booking.status == BookingStatus.PROCESSING else QueueStatus.WAITING
+        )
+        db.add(QueueEntry(
+            id=uuid.uuid4(), slot_booking_id=booking.id, centre_id=centre.id,
+            position=(index % 12) + 1, estimated_wait_minutes=20 + (index % 5) * 5,
+            status=queue_status, gate_entry_time=gate_entry,
+        ))
+
+        processing_started = gate_entry + timedelta(minutes=18 + index % 25)
+        is_completed = booking.status == BookingStatus.COMPLETED
+        completed_at = processing_started + timedelta(minutes=55 + index % 70) if is_completed else None
+        net_weight = round(20 + (index % 30), 3)
+        db.add(Transaction(
+            id=uuid.uuid4(), slot_booking_id=booking.id, farmer_id=farmer.id,
+            centre_id=centre.id, crop_id=crop.id, staff_id=staff[index % len(staff)].id,
+            gross_weight_q=net_weight + 1.5 if is_completed else None,
+            tare_weight_q=1.5 if is_completed else None,
+            net_weight_q=net_weight if is_completed else None,
+            msp_per_q=crop.msp_per_quintal,
+            total_amount=round(net_weight * crop.msp_per_quintal, 2) if is_completed else None,
+            quality_status=QualityStatus.ACCEPTED if is_completed else None,
+            moisture_percent=round(9 + (index % 40) / 10, 1) if is_completed else None,
+            foreign_matter_percent=round(0.3 + (index % 10) / 10, 1) if is_completed else None,
+            procurement_status=ProcurementStatus.CONFIRMED if is_completed else ProcurementStatus.PENDING,
+            payment_status=PaymentStatus.PAID if is_completed and index % 4 != 0 else PaymentStatus.NOT_INITIATED,
+            payment_ref=f"PFMS-LOAD-{index + 1:04d}" if is_completed and index % 4 != 0 else None,
+            pfms_transaction_id=f"UTR-LOAD-{index + 1:04d}" if is_completed and index % 4 != 0 else None,
+            completed_at=completed_at, created_at=processing_started,
+        ))
+    await db.flush()
+    print("[OK] Added 60 busy demo bookings with queue and process timing data")
+
+
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -339,9 +555,14 @@ async def initialize_demo_data():
     async with AsyncSessionLocal() as db:
         existing_user = await db.scalar(select(User).limit(1))
         if existing_user:
-            print("[OK] Demo data already exists; skipping seed.")
+            await ensure_demo_bookings(db)
+            await ensure_busy_demo_data(db)
+            await db.commit()
             return
         await run_seed(db)
+        await ensure_demo_bookings(db)
+        await ensure_busy_demo_data(db)
+        await db.commit()
 
 
 if __name__ == "__main__":

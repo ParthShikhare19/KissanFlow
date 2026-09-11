@@ -41,8 +41,12 @@ export default function TransactionEntry() {
   useEffect(() => {
     const initTransaction = async () => {
       try {
-        // Create transaction if not exists
-        const txn = await post<Transaction>('/transactions/', { slot_booking_id: bookingId })
+        let txn: Transaction
+        try {
+          txn = await get<Transaction>(`/transactions/by-booking/${bookingId}`)
+        } catch {
+          txn = await post<Transaction>('/transactions/', { slot_booking_id: bookingId })
+        }
         setTransaction(txn)
         if (txn.moisture_percent) setMoisture(String(txn.moisture_percent))
         if (txn.foreign_matter_percent) setForeignMatter(String(txn.foreign_matter_percent))
@@ -195,7 +199,7 @@ export default function TransactionEntry() {
                     )}
                     id={`quality-${opt.toLowerCase()}`}
                   >
-                    {opt === 'ACCEPTED' ? '✓ Accepted' : opt === 'REJECTED' ? '✗ Rejected' : '~ Conditional'}
+                    {opt === 'ACCEPTED' ? 'Accepted' : opt === 'REJECTED' ? 'Rejected' : 'Conditional'}
                   </button>
                 ))}
               </div>
@@ -292,8 +296,9 @@ export default function TransactionEntry() {
 
             {confirmed && !paid && (
               <div className="space-y-3">
-                <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-700">
-                  ✓ Purchase confirmed. Proceed to payment.
+                <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-700 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                  <span>Purchase confirmed. Proceed to payment.</span>
                 </div>
                 <button onClick={initiatePayment} disabled={saving} className="btn-accent w-full" id="initiate-payment">
                   {saving ? (

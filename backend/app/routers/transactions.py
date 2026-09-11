@@ -97,8 +97,43 @@ async def get_transaction(
     return APIResponse(success=True, data=await _enrich_transaction(txn, db))
 
 
+@router.get("/by-booking/{booking_id}", response_model=APIResponse[TransactionResponse])
+async def get_transaction_by_booking(
+    booking_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    """Fetch a transaction by its associated slot booking ID."""
+    result = await db.execute(
+        select(Transaction).where(Transaction.slot_booking_id == booking_id)
+    )
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(status_code=404, detail="No transaction for this booking")
+    return APIResponse(success=True, data=await _enrich_transaction(txn, db))
+
+
+@router.get("/centre/{centre_id}", response_model=APIResponse[list[TransactionResponse]])
+async def list_centre_transactions(
+    centre_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    """List recent transactions for a procurement centre."""
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.centre_id == centre_id)
+        .order_by(Transaction.created_at.desc())
+        .limit(25)
+    )
+    txns = result.scalars().all()
+    enriched = [await _enrich_transaction(t, db) for t in txns]
+    return APIResponse(success=True, data=enriched)
+
+
 @router.put("/{transaction_id}/quality", response_model=APIResponse[TransactionResponse])
 async def update_quality(
+
     transaction_id: uuid.UUID,
     body: QualityUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -157,7 +192,8 @@ async def confirm_transaction(
         raise HTTPException(status_code=400, detail="Weighment must be completed before confirmation")
     if txn.quality_status is None:
         raise HTTPException(status_code=400, detail="Quality check must be completed before confirmation")
-    if txn.quality_status.value == "REJECTED":
+    from app.models.transaction import QualityStatus
+    if txn.quality_status == QualityStatus.REJECTED:
         raise HTTPException(status_code=400, detail="Rejected produce cannot be confirmed for procurement")
 
     txn.total_amount = round(txn.net_weight_q * txn.msp_per_q, 2)
@@ -175,7 +211,7 @@ async def confirm_transaction(
     notif = Notification(
         id=uuid.uuid4(),
         user_id=txn.farmer_id,
-        title="Procurement Confirmed ✓",
+        title="Procurement Confirmed",
         body=f"Your crop procurement of {txn.net_weight_q}Q has been confirmed. Total: ₹{txn.total_amount:,.0f}",
         channel=NotificationChannel.APP,
     )
@@ -231,7 +267,7 @@ async def initiate_payment(
     notif = Notification(
         id=uuid.uuid4(),
         user_id=txn.farmer_id,
-        title="Payment Received 💰",
+        title="Payment Received",
         body=(
             f"₹{txn.total_amount:,.0f} has been credited to your bank account. "
             f"UTR: {confirm_result['utr']}"

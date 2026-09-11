@@ -1,5 +1,5 @@
 """
-SQLAlchemy async database engine and session factory for AnnSetu.
+SQLAlchemy async database engine and session factory for KissanFlow.
 Configured for Neon DB (serverless PostgreSQL) with SSL and connection pool limits.
 """
 import os

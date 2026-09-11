@@ -1,17 +1,17 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: annsetu_postgres
+    container_name: kissanflow_postgres
     environment:
-      POSTGRES_DB: annsetu
-      POSTGRES_USER: annsetu
-      POSTGRES_PASSWORD: annsetu
+      POSTGRES_DB: kissanflow
+      POSTGRES_USER: kissanflow
+      POSTGRES_PASSWORD: kissanflow
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U annsetu -d annsetu"]
+      test: ["CMD-SHELL", "pg_isready -U kissanflow -d kissanflow"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -19,7 +19,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: annsetu_redis
+    container_name: kissanflow_redis
     ports:
       - "6379:6379"
     restart: unless-stopped
@@ -35,7 +35,7 @@ services:
       dockerfile: Dockerfile
     command: python seed.py
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://annsetu:annsetu@postgres:5432/annsetu}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://kissanflow:kissanflow@postgres:5432/kissanflow}
       - JWT_SECRET=${JWT_SECRET:-demo-only-change-before-production}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-demo-refresh-secret-change-before-production}
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -48,17 +48,18 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: annsetu_backend
+    container_name: kissanflow_backend
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://annsetu:annsetu@postgres:5432/annsetu}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://kissanflow:kissanflow@postgres:5432/kissanflow}
       - JWT_SECRET=${JWT_SECRET:-demo-only-change-before-production}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-demo-refresh-secret-change-before-production}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       - REDIS_URL=redis://redis:6379
+      - REDIS_ENABLED=true
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CLIENT_URL=${CLIENT_URL:-http://localhost:5173}
@@ -76,7 +77,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: annsetu_frontend
+    container_name: kissanflow_frontend
     ports:
       - "5173:80"
     depends_on:

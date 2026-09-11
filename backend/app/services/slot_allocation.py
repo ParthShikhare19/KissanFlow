@@ -117,7 +117,7 @@ class SlotAllocationService:
             notif = Notification(
                 id=uuid.uuid4(),
                 user_id=farmer_id,
-                title="Slot Booking Confirmed ✓",
+                title="Slot Booking Confirmed",
                 body=(
                     f"Your slot at {centre.name} is confirmed for "
                     f"{allocated_date.strftime('%d %b %Y')} "
@@ -130,7 +130,7 @@ class SlotAllocationService:
             # Simulate SMS log
             print(
                 f"[SMS] To: +91{farmer.mobile} | "
-                f"AnnSetu: Slot confirmed at {centre.name} on "
+                f"KissanFlow: Slot confirmed at {centre.name} on "
                 f"{allocated_date.strftime('%d/%m/%Y')} {allocated_slot[0].strftime('%H:%M')}. "
                 f"Token: {token_number}"
             )

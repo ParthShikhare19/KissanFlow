@@ -13,7 +13,7 @@ i18n
       en: { translation: en },
       hi: { translation: hi },
     },
-    lng: localStorage.getItem('annsetu-lang') || 'en',
+    lng: localStorage.getItem('kissanflow-lang') || 'en',
     fallbackLng: 'en',
     interpolation: { escapeValue: false },
   })

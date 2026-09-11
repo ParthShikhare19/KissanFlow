@@ -61,7 +61,6 @@ export function useSocket(centreId?: string, bookingId?: string) {
       setYourTurn(true)
       toast.success(data.message || "It's your turn!", {
         duration: 10000,
-        icon: '🔔',
       })
       addNotification({
         id: Date.now().toString(),
@@ -74,8 +73,7 @@ export function useSocket(centreId?: string, bookingId?: string) {
     }
 
     const onAlertNew = (data: { type: string; message: string; severity: string }) => {
-      const icon = data.severity === 'CRITICAL' || data.severity === 'HIGH' ? '🚨' : '⚠️'
-      toast.error(`${icon} ${data.message}`, { duration: 8000 })
+      toast.error(data.message, { duration: 8000 })
     }
 
     const onDisconnect = () => {

@@ -48,7 +48,8 @@ class BookingResponse(BaseModel):
     crop: Optional[CropResponse] = None
     centre: Optional[CentreResponse] = None
     farmer: Optional[UserResponse] = None
+    qr_code_base64: Optional[str] = None
 
 
 class BookingWithQR(BookingResponse):
-    qr_code_base64: Optional[str] = None
+    pass

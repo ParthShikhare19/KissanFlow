@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-hot-toast'
-import { CheckCircle, Loader2, AlertCircle } from 'lucide-react'
+import { CheckCircle, Loader2, AlertCircle, Info } from 'lucide-react'
 import { api } from '@/utils/api'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -113,7 +113,7 @@ export default function Register() {
         })
         const { access_token, refresh_token, user } = loginRes.data.data
         setTokens(access_token, refresh_token, user)
-        toast.success('Registration successful! Welcome to AnnSetu 🌾')
+        toast.success('Registration successful! Welcome to KissanFlow')
         navigate('/farmer/dashboard')
       }
     } catch (err: unknown) {
@@ -268,8 +268,9 @@ export default function Register() {
           {/* Step 3 — Bank */}
           {step === 2 && (
             <div className="space-y-4 animate-fade-in">
-              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-700">
-                💡 Bank details are used for direct payment after crop procurement.
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-xs text-blue-700 flex items-center gap-2">
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span>Bank details are used for direct payment after crop procurement.</span>
               </div>
               <div>
                 <label className="label">{t('auth.register.bankAccount')}</label>

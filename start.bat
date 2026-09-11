@@ -1,8 +1,8 @@
 @echo off
-REM AnnSetu — one-command SIH demo launcher (run from the project root)
+REM KissanFlow — one-command SIH demo launcher (run from the project root)
 echo.
 echo =============================================
-echo   AnnSetu - starting the SIH demo stack
+echo   KissanFlow - starting the SIH demo stack
 echo =============================================
 echo.
 

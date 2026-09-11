@@ -1,5 +1,5 @@
 /** Mandi Staff — Gate Entry with QR scanner and manual token input. */
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-hot-toast'
 import { ScanLine, Keyboard, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
@@ -22,37 +22,75 @@ export default function GateEntry() {
   const [booking, setBooking] = useState<BookingInfo | null>(null)
   const [loading, setLoading] = useState(false)
   const [marking, setMarking] = useState(false)
+  const [scannedCount, setScannedCount] = useState(() => {
+    return parseInt(sessionStorage.getItem('kissanflow_scanned_today') || '0', 10)
+  })
+  const [justMarked, setJustMarked] = useState(false)
+  const [scannerError, setScannerError] = useState<string | null>(null)
+  const scannerRef = useRef<{ render: (onSuccess: (text: string) => void, onError?: (error: string) => void) => void; clear: () => Promise<void> } | null>(null)
+  const lastDecodedTokenRef = useRef<string | null>(null)
 
   // Initialize QR scanner when tab is qr
   useEffect(() => {
     if (tab !== 'qr') return
-    let scanner: { render: (onSuccess: (text: string) => void, onError?: (error: string) => void) => void; clear: () => Promise<void> } | null = null
+    let disposed = false
+    setScannerError(null)
+    lastDecodedTokenRef.current = null
 
     const initScanner = async () => {
       try {
         const { Html5QrcodeScanner } = await import('html5-qrcode')
-        scanner = new Html5QrcodeScanner('qr-reader', { fps: 10, qrbox: 250 }, false)
+        if (disposed || scannerRef.current) return
+
+        const scanner = new Html5QrcodeScanner(
+          'qr-reader',
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1,
+            rememberLastUsedCamera: true,
+          },
+          false
+        )
+        scannerRef.current = scanner
         scanner.render(
           (decodedText: string) => {
+            let decodedToken = decodedText.trim()
             try {
-              const data = JSON.parse(decodedText)
-              if (data.token) {
-                setToken(data.token)
-                lookupToken(data.token)
-              }
+              const data = JSON.parse(decodedText) as { token?: string }
+              decodedToken = data.token?.trim() || ''
             } catch {
-              toast.error('Invalid QR code')
+              // Accept a plain token as well as the platform's JSON payload.
             }
+
+            if (!decodedToken || lastDecodedTokenRef.current === decodedToken) return
+            lastDecodedTokenRef.current = decodedToken
+            setToken(decodedToken.toUpperCase())
+            lookupToken(decodedToken)
           },
-          () => {}
+          (errorMessage: string) => {
+            if (!disposed && !errorMessage.toLowerCase().includes('no qr code')) {
+              setScannerError('Camera scan failed. Allow camera access or use Manual Entry.')
+            }
+          }
         )
       } catch (e) {
         console.error('QR scanner init failed:', e)
+        if (!disposed) {
+          setScannerError('Camera is unavailable. Allow camera access or use Manual Entry.')
+        }
       }
     }
     initScanner()
     return () => {
-      void scanner?.clear()
+      disposed = true
+      const scanner = scannerRef.current
+      scannerRef.current = null
+      if (scanner) {
+        void scanner.clear().catch((error) => {
+          console.warn('QR scanner cleanup failed:', error)
+        })
+      }
     }
   }, [tab])
 
@@ -81,8 +119,17 @@ export default function GateEntry() {
     try {
       await post('/queue/gate-entry', { token_number: booking.token_number })
       toast.success('Gate entry marked! Farmer added to queue.')
-      setBooking(null)
-      setToken('')
+      setScannedCount((c) => {
+        const next = c + 1
+        sessionStorage.setItem('kissanflow_scanned_today', String(next))
+        return next
+      })
+      setJustMarked(true)
+      setTimeout(() => {
+        setJustMarked(false)
+        setBooking(null)
+        setToken('')
+      }, 1200)
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to mark entry'
       toast.error(msg)
@@ -103,7 +150,18 @@ export default function GateEntry() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <h1 className="page-title">{t('staff.gateEntry.title')}</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-title">{t('staff.gateEntry.title')}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Scan QR or enter token to admit farmer into queue</p>
+        </div>
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl shadow-xs">
+          <CheckCircle className="w-4 h-4 text-emerald-600" />
+          <span className="text-xs font-semibold text-emerald-800">
+            Admitted Today: <strong className="font-bold text-sm text-emerald-900">{scannedCount}</strong>
+          </span>
+        </div>
+      </div>
 
       {/* Tab selector */}
       <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
@@ -128,6 +186,11 @@ export default function GateEntry() {
         <div className="card p-6">
           <p className="text-sm text-gray-500 mb-4 text-center">Position the QR code within the frame</p>
           <div id="qr-reader" className="w-full" />
+          {scannerError && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {scannerError}
+            </div>
+          )}
         </div>
       )}
 
@@ -158,9 +221,12 @@ export default function GateEntry() {
       {booking && (() => {
         const info = getStatusInfo(booking.status)
         const Icon = info.icon
-        const canEntry = ['BOOKED'].includes(booking.status)
+        const canEntry = ['BOOKED', 'ARRIVED'].includes(booking.status)
         return (
-          <div className={`card p-6 border-2 ${info.color} animate-fade-in`}>
+          <div className={clsx(
+            'card p-6 border-2 transition-all duration-300 animate-fade-in',
+            justMarked ? 'bg-emerald-100 border-emerald-500 scale-[1.01]' : info.color
+          )}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <Icon className={`w-8 h-8 ${info.iconColor}`} />
@@ -189,12 +255,12 @@ export default function GateEntry() {
             {canEntry && (
               <button
                 onClick={markGateEntry}
-                disabled={marking}
+                disabled={marking || justMarked}
                 className="btn-primary w-full mt-5"
                 id="mark-gate-entry"
               >
                 <CheckCircle className="w-4 h-4" />
-                {marking ? 'Marking...' : t('staff.gateEntry.markEntry')}
+                {justMarked ? 'Admitted!' : marking ? 'Marking...' : t('staff.gateEntry.markEntry')}
               </button>
             )}
           </div>

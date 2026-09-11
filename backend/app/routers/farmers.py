@@ -1,5 +1,6 @@
 """Farmers router: profile, timeline, transactions, grievances, notifications."""
 import uuid
+import json
 from typing import Annotated
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +13,7 @@ from app.middleware.auth import CurrentUser, require_role
 from app.models.user import User, UserRole
 from app.models.farmer_profile import FarmerProfile
 from app.models.slot_booking import SlotBooking, BookingStatus
+from app.models.queue_entry import QueueEntry, QueueStatus
 from app.models.transaction import Transaction
 from app.models.grievance import Grievance
 from app.models.notification import Notification
@@ -21,8 +23,15 @@ from app.schemas.transaction import TransactionResponse
 from app.schemas.grievance import GrievanceResponse
 from app.schemas.notification import NotificationResponse
 from app.schemas.common import APIResponse, PaginatedResponse, paginated_response
+from app.utils.qr_generator import generate_qr_base64
 
 router = APIRouter(tags=["farmers"])
+
+
+def _duration_minutes(start: datetime | None, end: datetime | None) -> int | None:
+    if not start or not end:
+        return None
+    return max(0, round((end - start).total_seconds() / 60))
 
 
 @router.get("/{farmer_id}/bookings/latest", response_model=APIResponse[BookingResponse | None])
@@ -48,10 +57,64 @@ async def get_latest_booking(
         .limit(1)
     )
     booking = result.scalar_one_or_none()
-    return APIResponse(
-        success=True,
-        data=BookingResponse.model_validate(booking) if booking else None,
+    booking_response = None
+    if booking:
+        booking_response = BookingResponse.model_validate(booking)
+        booking_response.qr_code_base64 = generate_qr_base64(json.loads(booking.qr_code_data))
+    return APIResponse(success=True, data=booking_response)
+
+
+@router.get("/{farmer_id}/process-summary", response_model=APIResponse[list[dict]])
+async def get_farmer_process_summary(
+    farmer_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: CurrentUser,
+):
+    """Return real elapsed times for the farmer's recent procurement cycles."""
+    if current_user.id != farmer_id and current_user.role not in [
+        UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN, UserRole.CSC_OPERATOR
+    ]:
+        raise HTTPException(status_code=403, detail="Cannot view another farmer's process summary")
+
+    result = await db.execute(
+        select(SlotBooking)
+        .where(SlotBooking.farmer_id == farmer_id)
+        .order_by(SlotBooking.created_at.desc())
+        .limit(50)
     )
+    bookings = result.scalars().all()
+    summary = []
+    for booking in bookings:
+        queue_result = await db.execute(
+            select(QueueEntry).where(QueueEntry.slot_booking_id == booking.id)
+        )
+        queue_entry = queue_result.scalar_one_or_none()
+        txn_result = await db.execute(
+            select(Transaction).where(Transaction.slot_booking_id == booking.id)
+        )
+        transaction = txn_result.scalar_one_or_none()
+        gate_entry = queue_entry.gate_entry_time if queue_entry else None
+        processing_started = transaction.created_at if transaction else None
+        completed_at = transaction.completed_at if transaction else None
+        summary.append({
+            "booking_id": str(booking.id),
+            "token_number": booking.token_number,
+            "status": booking.status.value,
+            "slot_date": booking.slot_date.isoformat(),
+            "booking_to_gate_minutes": _duration_minutes(booking.created_at, gate_entry),
+            "gate_to_processing_minutes": _duration_minutes(gate_entry, processing_started),
+            "processing_to_completion_minutes": _duration_minutes(processing_started, completed_at),
+            "total_cycle_minutes": _duration_minutes(booking.created_at, completed_at),
+            "payment_status": transaction.payment_status.value if transaction else None,
+        })
+    summary.sort(
+        key=lambda item: (
+            item["total_cycle_minutes"] is None,
+            item["status"] not in ["PROCESSING", "IN_QUEUE"],
+            item["slot_date"],
+        )
+    )
+    return APIResponse(success=True, data=summary)
 
 
 @router.get("/{farmer_id}/profile", response_model=APIResponse[FarmerWithProfileResponse])

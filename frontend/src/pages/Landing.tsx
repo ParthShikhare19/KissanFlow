@@ -2,13 +2,13 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { CalendarCheck, Users, ShieldCheck, ArrowRight, Sprout } from 'lucide-react'
+import { CalendarCheck, Users, ShieldCheck, ArrowRight, Sprout, Building2, ClipboardList, Landmark } from 'lucide-react'
 
 const ROLE_CARDS = [
   {
     role: 'farmer',
     labelKey: 'landing.roles.farmer',
-    emoji: '🌾',
+    icon: Sprout,
     color: 'from-green-500 to-emerald-600',
     to: '/login?role=FARMER',
     desc: 'Book slots, track queue, receive payments',
@@ -16,7 +16,7 @@ const ROLE_CARDS = [
   {
     role: 'staff',
     labelKey: 'landing.roles.staff',
-    emoji: '🏢',
+    icon: Building2,
     color: 'from-blue-500 to-blue-600',
     to: '/login?role=MANDI_STAFF',
     desc: 'Gate entry, queue management, transactions',
@@ -24,7 +24,7 @@ const ROLE_CARDS = [
   {
     role: 'officer',
     labelKey: 'landing.roles.officer',
-    emoji: '📋',
+    icon: ClipboardList,
     color: 'from-violet-500 to-purple-600',
     to: '/login?role=MANDI_OFFICER',
     desc: 'Approve transactions, monitor alerts, resolve grievances',
@@ -32,7 +32,7 @@ const ROLE_CARDS = [
   {
     role: 'govt',
     labelKey: 'landing.roles.govt',
-    emoji: '🏛️',
+    icon: Landmark,
     color: 'from-orange-500 to-amber-600',
     to: '/login?role=GOVT_ADMIN',
     desc: 'National procurement analytics and oversight',
@@ -69,7 +69,7 @@ export default function Landing() {
   const toggleLang = () => {
     const next = i18n.language === 'en' ? 'hi' : 'en'
     i18n.changeLanguage(next)
-    localStorage.setItem('annsetu-lang', next)
+    localStorage.setItem('kissanflow-lang', next)
   }
 
   return (
@@ -129,7 +129,7 @@ export default function Landing() {
             Built for India's 140M Farmers
           </h2>
           <p className="text-center text-gray-500 mb-12 max-w-2xl mx-auto">
-            AnnSetu digitizes the entire agricultural procurement workflow — from slot booking to payment disbursement.
+            KissanFlow digitizes the entire agricultural procurement workflow — from slot booking to payment disbursement.
           </p>
           <div className="grid md:grid-cols-3 gap-6">
             {FEATURES.map((f) => {
@@ -171,22 +171,27 @@ export default function Landing() {
           <h2 className="text-3xl font-bold text-center text-gray-900 mb-3">Who are you?</h2>
           <p className="text-center text-gray-500 mb-12">Select your role to get started</p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {ROLE_CARDS.map((card) => (
-              <Link
-                key={card.role}
-                to={card.to}
-                className="group relative overflow-hidden rounded-2xl shadow-md hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer"
-              >
-                <div className={`bg-gradient-to-br ${card.color} p-8 text-white h-full`}>
-                  <div className="text-4xl mb-4">{card.emoji}</div>
-                  <h3 className="text-xl font-bold mb-2">{t(card.labelKey)}</h3>
-                  <p className="text-white/80 text-sm leading-relaxed">{card.desc}</p>
-                  <div className="mt-5 flex items-center gap-1 text-white/90 text-sm font-semibold">
-                    Login <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            {ROLE_CARDS.map((card) => {
+              const Icon = card.icon
+              return (
+                <Link
+                  key={card.role}
+                  to={card.to}
+                  className="group relative overflow-hidden rounded-2xl shadow-md hover:shadow-xl transition-all hover:-translate-y-1 cursor-pointer"
+                >
+                  <div className={`bg-gradient-to-br ${card.color} p-8 text-white h-full`}>
+                    <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center mb-4">
+                      <Icon className="w-6 h-6 text-white" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">{t(card.labelKey)}</h3>
+                    <p className="text-white/80 text-sm leading-relaxed">{card.desc}</p>
+                    <div className="mt-5 flex items-center gap-1 text-white/90 text-sm font-semibold">
+                      Login <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              )
+            })}
           </div>
         </div>
       </section>
@@ -194,7 +199,7 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-gray-100 py-8 px-6 text-center">
         <p className="text-gray-500 text-sm">
-          <span className="font-semibold text-primary">AnnSetu — अन्नसेतु</span>
+          <span className="font-semibold text-primary">KissanFlow — अन्नसेतु</span>
           {' '}| Smart India Hackathon 2024 | Ministry of Agriculture & Farmers Welfare, Government of India
         </p>
       </footer>

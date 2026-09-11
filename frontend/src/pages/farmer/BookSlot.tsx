@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-hot-toast'
-import { CheckCircle, ChevronLeft, ChevronRight, Loader2, Download } from 'lucide-react'
+import { CheckCircle, ChevronLeft, ChevronRight, Loader2, Download, Smartphone } from 'lucide-react'
 import { get, post } from '@/utils/api'
 import clsx from 'clsx'
 
@@ -69,7 +69,7 @@ export default function BookSlot() {
       })
       setBooking(result)
       setStep(6) // success step
-      toast.success('Booking confirmed! 🎉')
+      toast.success('Booking confirmed!')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Booking failed'
       toast.error(msg)
@@ -82,7 +82,7 @@ export default function BookSlot() {
     if (!booking?.qr_code_base64) return
     const link = document.createElement('a')
     link.href = `data:image/png;base64,${booking.qr_code_base64}`
-    link.download = `annsetu-qr-${booking.token_number}.png`
+    link.download = `kissanflow-qr-${booking.token_number}.png`
     link.click()
   }
 
@@ -100,23 +100,26 @@ export default function BookSlot() {
 
   if (step === 6 && booking) {
     return (
-      <div className="max-w-lg mx-auto">
-        <div className="card p-8 text-center animate-fade-in">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+      <div className="max-w-md mx-auto text-center py-8">
+        <div className="card p-8">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('booking.success.title')}</h2>
-          <div className="mt-4 p-4 bg-gray-50 rounded-xl">
-            <p className="text-xs text-gray-500 mb-1">Token Number</p>
-            <p className="text-3xl font-extrabold text-primary">{booking.token_number}</p>
-            <p className="text-sm text-gray-600 mt-2">{booking.centre?.name} · {booking.slot_date} · {booking.slot_start_time?.slice(0,5)}</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-1">{t('booking.success.title')}</h2>
+          <p className="text-gray-500 text-sm mb-6">{t('booking.success.subtitle')}</p>
+          <div className="bg-gray-50 rounded-xl p-4 mb-6">
+            <p className="text-xs text-gray-400 mb-1">{t('booking.success.token')}</p>
+            <p className="text-3xl font-extrabold font-mono text-primary">{booking.token_number}</p>
+            <p className="text-xs text-gray-500 mt-2">
+              {booking.centre?.name} &bull; {booking.slot_date} at {booking.slot_start_time?.slice(0, 5)}
+            </p>
           </div>
           {booking.qr_code_base64 && (
-            <div className="mt-6">
+            <div className="mb-6">
               <img
                 src={`data:image/png;base64,${booking.qr_code_base64}`}
-                alt="QR Code"
-                className="w-48 h-48 mx-auto border rounded-xl"
+                alt="Booking QR Code"
+                className="w-44 h-44 mx-auto rounded-xl border border-gray-200 p-2 shadow-xs"
               />
               <button onClick={downloadQR} className="btn-secondary mt-3 w-full">
                 <Download className="w-4 h-4" /> Download QR Code
@@ -124,8 +127,11 @@ export default function BookSlot() {
             </div>
           )}
           {/* SMS simulation */}
-          <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-100 text-xs text-green-700 text-left">
-            📱 {t('booking.success.sms', { mobile: 'XXXXXXXX' })}: Your slot <strong>{booking.token_number}</strong> confirmed at {booking.centre?.name}
+          <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-100 text-xs text-green-700 text-left flex items-start gap-2">
+            <Smartphone className="w-4 h-4 text-green-700 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold">{t('booking.success.sms', { mobile: 'XXXXXXXX' })}:</span> Your slot <strong>{booking.token_number}</strong> confirmed at {booking.centre?.name}
+            </div>
           </div>
           <button onClick={() => navigate('/farmer/dashboard')} className="btn-primary w-full mt-5">
             Go to Dashboard

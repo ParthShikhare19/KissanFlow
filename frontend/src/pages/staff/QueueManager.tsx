@@ -89,9 +89,18 @@ export default function QueueManager() {
               <p className="font-mono text-lg text-primary mt-0.5">{currentlyProcessing.token_number}</p>
               <p className="text-sm text-gray-600 mt-1">{currentlyProcessing.crop_name} · {currentlyProcessing.declared_quantity_q}Q</p>
             </div>
-            <div className="text-right">
-              <div className="text-3xl font-bold text-accent">{formatTime(elapsedSeconds)}</div>
-              <p className="text-xs text-gray-500 mt-1">Time elapsed</p>
+            <div className="text-right flex flex-col items-end gap-3">
+              <div>
+                <div className="text-3xl font-bold text-accent">{formatTime(elapsedSeconds)}</div>
+                <p className="text-xs text-gray-500 mt-1">Time elapsed</p>
+              </div>
+              <Link
+                to={`/staff/transaction/${currentlyProcessing.slot_booking_id}`}
+                className="btn-primary text-sm px-4 py-2 flex items-center gap-1"
+              >
+                {t('staff.queue.openTransaction')}
+                <ChevronRight className="w-4 h-4" />
+              </Link>
             </div>
           </div>
         </div>

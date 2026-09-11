@@ -1,5 +1,5 @@
 {
-  "app.name": "AnnSetu",
+  "app.name": "KissanFlow",
   "app.tagline": "Digital bridge between farmer and mandi",
   "app.tagline_hi": "किसान और मंडी के बीच डिजिटल सेतु",
 
@@ -12,7 +12,7 @@
   "nav.logout": "Logout",
   "nav.language": "Language",
 
-  "landing.hero.title": "AnnSetu — अन्नसेतु",
+  "landing.hero.title": "KissanFlow — अन्नसेतु",
   "landing.hero.subtitle": "Digital bridge between farmer and mandi",
   "landing.hero.subtitle_hi": "किसान और मंडी के बीच डिजिटल सेतु",
   "landing.hero.cta": "Get Started",
@@ -27,7 +27,7 @@
   "landing.roles.officer": "Mandi Officer",
   "landing.roles.govt": "Govt Admin",
 
-  "auth.login.title": "Login to AnnSetu",
+  "auth.login.title": "Login to KissanFlow",
   "auth.login.mobile": "Mobile Number",
   "auth.login.password": "Password",
   "auth.login.role": "Login as",
@@ -42,7 +42,7 @@
   "auth.register.mobile": "Mobile Number",
   "auth.register.aadhaar": "Aadhaar Number",
   "auth.register.verify": "Verify",
-  "auth.register.verified": "Verified ✓",
+  "auth.register.verified": "Verified",
   "auth.register.password": "Password",
   "auth.register.village": "Village",
   "auth.register.district": "District",
@@ -120,7 +120,7 @@
   "staff.gateEntry.manual": "Manual Entry",
   "staff.gateEntry.token": "Enter Token Number",
   "staff.gateEntry.submit": "Submit",
-  "staff.gateEntry.markEntry": "Mark Gate Entry ✓",
+  "staff.gateEntry.markEntry": "Mark Gate Entry",
   "staff.gateEntry.valid": "Valid",
   "staff.gateEntry.invalid": "Invalid",
   "staff.gateEntry.alreadyArrived": "Already Arrived",
@@ -163,10 +163,13 @@
   "notifications.filter.ivr": "IVR",
   "notifications.empty": "No notifications",
 
-  "ivr.title": "IVR Helpline Simulation",
-  "ivr.connected": "Call Connected — AnnSetu Helpline",
-  "ivr.menu.main": "Press 1 to Check Status\nPress 2 to Book Slot\nPress 3 to Raise Grievance\nPress 9 to Repeat",
-  "ivr.callEnded": "Call Ended",
+  "ivr.title": "Toll-Free Voice Helpline (IVR)",
+  "ivr.subtitle": "Call 1800-180-1551 from any mobile or basic keypad phone without internet.",
+  "ivr.tollFree": "Toll-Free Helpline Number",
+  "ivr.callNow": "Call from Phone",
+  "ivr.treeTitle": "Voice Menu Structure",
+  "ivr.historyTitle": "Phone Helpline Tickets",
+  "ivr.howItWorks": "How Farmer Voice Calling Works",
 
   "common.loading": "Loading...",
   "common.error": "Something went wrong",

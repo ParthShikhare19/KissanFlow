@@ -71,7 +71,7 @@ export function Sidebar({ isOpen, onClose, desktopMode = false }: SidebarProps) 
       <div className="flex flex-col h-full">
         {/* User Info */}
         {user && (
-          <div className="px-5 py-4 bg-primary-50 border-b border-primary-100">
+          <div className="px-5 py-4 bg-primary-50/70 border-b border-primary-100">
             <p className="font-semibold text-gray-900 text-sm truncate">{user.name}</p>
             <p className="text-xs text-primary capitalize mt-0.5">
               {user.role.replace(/_/g, ' ').toLowerCase()}
@@ -89,10 +89,10 @@ export function Sidebar({ isOpen, onClose, desktopMode = false }: SidebarProps) 
                 to={item.to}
                 className={({ isActive }) =>
                   clsx(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all',
                     isActive
-                      ? 'bg-primary text-white shadow-sm'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-primary text-white shadow-md shadow-primary/15'
+                      : 'text-gray-600 hover:bg-primary-50 hover:text-primary-dark'
                   )
                 }
               >
@@ -131,18 +131,18 @@ export function Sidebar({ isOpen, onClose, desktopMode = false }: SidebarProps) 
       {/* Drawer */}
       <aside
         className={clsx(
-          'fixed left-0 top-0 bottom-0 z-50 w-64 bg-white shadow-xl',
-          'flex flex-col border-r border-gray-100 transition-transform duration-300',
+          'fixed left-0 top-0 bottom-0 z-50 w-72 bg-white shadow-2xl',
+          'flex flex-col border-r border-gray-200 transition-transform duration-300',
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Drawer Header with logo + close */}
-        <div className="flex items-center justify-between h-16 px-5 border-b border-gray-100">
+        <div className="flex items-center justify-between h-16 px-5 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-white font-bold text-xs">AS</span>
             </div>
-            <span className="font-bold text-gray-900">AnnSetu</span>
+            <span className="font-bold text-gray-900">KissanFlow</span>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-100" aria-label="Close menu">
             <X className="w-5 h-5 text-gray-500" />
@@ -151,7 +151,7 @@ export function Sidebar({ isOpen, onClose, desktopMode = false }: SidebarProps) 
 
         {/* User Info */}
         {user && (
-          <div className="px-5 py-4 bg-primary-50 border-b border-primary-100">
+          <div className="px-5 py-4 bg-primary-50/70 border-b border-primary-100">
             <p className="font-semibold text-gray-900 text-sm truncate">{user.name}</p>
             <p className="text-xs text-primary capitalize mt-0.5">
               {user.role.replace(/_/g, ' ').toLowerCase()}
@@ -170,10 +170,10 @@ export function Sidebar({ isOpen, onClose, desktopMode = false }: SidebarProps) 
                 onClick={onClose}
                 className={({ isActive }) =>
                   clsx(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all',
                     isActive
-                      ? 'bg-primary text-white shadow-sm'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-primary text-white shadow-md shadow-primary/15'
+                      : 'text-gray-600 hover:bg-primary-50 hover:text-primary-dark'
                   )
                 }
               >

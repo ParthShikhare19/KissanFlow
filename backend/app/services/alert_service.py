@@ -63,7 +63,7 @@ class AlertService:
                     notif = Notification(
                         id=uuid.uuid4(),
                         user_id=officer.id,
-                        title="⚠️ Processing Delay Alert",
+                        title="Processing Delay Alert",
                         body=alert.message,
                         channel=NotificationChannel.APP,
                     )

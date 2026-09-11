@@ -1,6 +1,6 @@
-# AnnSetu
+# KissanFlow
 
-AnnSetu is an SIH demo for transparent agricultural procurement: farmers book slots, mandi staff manage gate entry and queues, officers verify procurement and payments, and administrators see operational analytics.
+KissanFlow is an SIH demo for transparent agricultural procurement: farmers book slots, mandi staff manage gate entry and queues, officers verify procurement and payments, and administrators see operational analytics.
 
 ## Run the demo
 

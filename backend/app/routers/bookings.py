@@ -28,6 +28,13 @@ def _booking_with_details_query():
     )
 
 
+def _booking_response(booking: SlotBooking) -> BookingResponse:
+    """Return booking details with a freshly generated QR image."""
+    response = BookingResponse.model_validate(booking)
+    response.qr_code_base64 = generate_qr_base64(json.loads(booking.qr_code_data))
+    return response
+
+
 @router.post("/", response_model=APIResponse[BookingWithQR], status_code=201)
 async def create_booking(
     body: BookingCreate,
@@ -76,7 +83,7 @@ async def get_booking(
         UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN
     ]:
         raise HTTPException(status_code=403, detail="Not authorized to view this booking")
-    return APIResponse(success=True, data=BookingResponse.model_validate(booking))
+    return APIResponse(success=True, data=_booking_response(booking))
 
 
 @router.get("/token/{token_number}", response_model=APIResponse[BookingResponse])
@@ -96,7 +103,7 @@ async def get_booking_by_token(
         UserRole.MANDI_STAFF, UserRole.MANDI_OFFICER, UserRole.GOVT_ADMIN
     ]:
         raise HTTPException(status_code=403, detail="Not authorized to view this booking")
-    return APIResponse(success=True, data=BookingResponse.model_validate(booking))
+    return APIResponse(success=True, data=_booking_response(booking))
 
 
 @router.put("/{booking_id}/cancel", response_model=APIResponse[BookingResponse])
@@ -121,7 +128,7 @@ async def cancel_booking(
     booking.status = BookingStatus.CANCELLED
     await db.commit()
     await db.refresh(booking)
-    return APIResponse(success=True, data=BookingResponse.model_validate(booking))
+    return APIResponse(success=True, data=_booking_response(booking))
 
 
 @router.get("/{booking_id}/qr", response_model=APIResponse[dict])

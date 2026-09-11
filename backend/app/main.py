@@ -1,5 +1,5 @@
 """
-AnnSetu FastAPI Application Entry Point.
+KissanFlow FastAPI Application Entry Point.
 Mounts all routers, CORS middleware, Socket.IO, and starts APScheduler.
 
 Run with: uvicorn app.main:app --reload
@@ -26,6 +26,7 @@ from app.routers.notifications import router as notifications_router
 from app.routers.dashboard import mandi_router, govt_router
 from app.routers.analytics import analytics_router, mock_router
 from app.routers.admin import router as admin_router
+from app.routers.ivr import router as ivr_router
 
 CLIENT_URL = os.environ.get("CLIENT_URL", "http://localhost:5173")
 
@@ -35,16 +36,16 @@ async def lifespan(fastapi_app: FastAPI):
     """Start APScheduler on startup, shutdown on exit."""
     scheduler = setup_scheduler()
     scheduler.start()
-    print("[AnnSetu] APScheduler started with 3 background jobs.")
+    print("[KissanFlow] APScheduler started with 3 background jobs.")
     yield
     scheduler.shutdown(wait=False)
-    print("[AnnSetu] APScheduler shut down.")
+    print("[KissanFlow] APScheduler shut down.")
 
 
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
 
 fastapi_app = FastAPI(
-    title="AnnSetu API",
+    title="KissanFlow API",
     version="1.0.0",
     description="Agricultural procurement management platform — SIH 2024",
     lifespan=lifespan,
@@ -83,11 +84,12 @@ fastapi_app.include_router(govt_router,          prefix="/api/dashboard/govt")
 fastapi_app.include_router(analytics_router,     prefix="/api/analytics")
 fastapi_app.include_router(mock_router,          prefix="/api/mock")
 fastapi_app.include_router(admin_router,         prefix="/api/admin")
+fastapi_app.include_router(ivr_router,           prefix="/api/ivr")  # Twilio webhooks — no JWT auth
 
 
 @fastapi_app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "AnnSetu API", "version": "1.0.0"}
+    return {"status": "ok", "service": "KissanFlow API", "version": "1.0.0"}
 
 
 # ─── Socket.IO ASGI wrapper exposed as 'app' for uvicorn ─────────────────────

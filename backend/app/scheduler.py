@@ -1,4 +1,4 @@
-"""APScheduler background jobs for AnnSetu alerts and anomaly detection."""
+"""APScheduler background jobs for KissanFlow alerts and anomaly detection."""
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger

@@ -85,7 +85,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'annsetu-auth',
+      name: 'kissanflow-auth',
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,

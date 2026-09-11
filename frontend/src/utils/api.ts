@@ -5,6 +5,20 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
+function getStoredAccessToken(): string | null {
+  const directToken = localStorage.getItem('access_token')
+  if (directToken) return directToken
+
+  try {
+    const persistedAuth = JSON.parse(localStorage.getItem('kissanflow-auth') || '{}') as {
+      state?: { accessToken?: string | null }
+    }
+    return persistedAuth.state?.accessToken || null
+  } catch {
+    return null
+  }
+}
+
 export const api = axios.create({
   baseURL: BASE_URL,
   headers: { 'Content-Type': 'application/json' },
@@ -13,7 +27,7 @@ export const api = axios.create({
 
 // Attach JWT token to every request
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = localStorage.getItem('access_token')
+  const token = getStoredAccessToken()
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -27,6 +41,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
+      localStorage.removeItem('kissanflow-auth')
       window.location.href = '/login'
     }
     return Promise.reject(error)

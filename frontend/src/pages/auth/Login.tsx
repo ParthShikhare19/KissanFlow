@@ -7,11 +7,11 @@ import { useAuthStore } from '@/stores/authStore'
 import { Sprout, Eye, EyeOff } from 'lucide-react'
 
 const ROLES = [
-  { value: 'FARMER', label: '🌾 Farmer (किसान)' },
-  { value: 'MANDI_STAFF', label: '🏢 Mandi Staff' },
-  { value: 'MANDI_OFFICER', label: '📋 Mandi Officer' },
-  { value: 'GOVT_ADMIN', label: '🏛️ Govt Admin' },
-  { value: 'CSC_OPERATOR', label: '💻 CSC Operator' },
+  { value: 'FARMER', label: 'Farmer (किसान)' },
+  { value: 'MANDI_STAFF', label: 'Mandi Staff' },
+  { value: 'MANDI_OFFICER', label: 'Mandi Officer' },
+  { value: 'GOVT_ADMIN', label: 'Govt Administrator' },
+  { value: 'CSC_OPERATOR', label: 'CSC Operator' },
 ]
 
 export default function Login() {

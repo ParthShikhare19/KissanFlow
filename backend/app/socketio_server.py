@@ -1,29 +1,23 @@
 """
-Socket.IO server for AnnSetu real-time queue updates.
+Socket.IO server for KissanFlow real-time queue updates.
 Uses AsyncRedisManager for pub/sub across multiple workers.
 """
 import os
 import socketio
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+REDIS_ENABLED = os.environ.get("REDIS_ENABLED", "false").lower() in {"1", "true", "yes"}
 
-# Create async Socket.IO server with Redis pub/sub
-try:
-    sio = socketio.AsyncServer(
-        async_mode="asgi",
-        cors_allowed_origins="*",
-        client_manager=socketio.AsyncRedisManager(REDIS_URL),
-        logger=False,
-        engineio_logger=False,
-    )
-except Exception:
-    # Fallback without Redis (for local dev without Redis)
-    sio = socketio.AsyncServer(
-        async_mode="asgi",
-        cors_allowed_origins="*",
-        logger=False,
-        engineio_logger=False,
-    )
+# AsyncRedisManager connects in a background listener, so an unavailable Redis
+# server cannot be detected by wrapping its constructor in try/except.
+client_manager = socketio.AsyncRedisManager(REDIS_URL) if REDIS_ENABLED else None
+sio = socketio.AsyncServer(
+    async_mode="asgi",
+    cors_allowed_origins="*",
+    client_manager=client_manager,
+    logger=False,
+    engineio_logger=False,
+)
 
 # Track socket_id -> user_id mappings in memory
 _socket_user_map: dict[str, str] = {}

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'react-hot-toast'
-import { Plus, X, AlertCircle } from 'lucide-react'
+import { Plus, X, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { get, post } from '@/utils/api'
 import { useAuthStore } from '@/stores/authStore'
 import { CardSkeleton } from '@/components/LoadingSkeleton'
@@ -94,8 +94,9 @@ export default function Grievances() {
                 </span>
               </div>
               {g.resolution && (
-                <div className="mt-3 p-2 bg-green-50 rounded text-xs text-green-700">
-                  ✓ {g.resolution}
+                <div className="mt-3 p-2.5 bg-green-50 rounded-lg border border-green-100 text-xs text-green-700 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                  <span>{g.resolution}</span>
                 </div>
               )}
             </div>
